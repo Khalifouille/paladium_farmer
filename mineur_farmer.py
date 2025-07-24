@@ -22,10 +22,8 @@ print(f"📍 Position initiale enregistrée : {initial_mouse_pos}")
 
 print("⛏️ Minage + anti-AFK lancé. Appuie sur Échap pour arrêter.")
 
-# État de direction : True = droite, False = gauche
 direction_right = True
 
-# Commencer à miner
 pyautogui.mouseDown(button='left')
 pyautogui.keyDown('w')
 
@@ -37,23 +35,19 @@ try:
     while not stop_script:
         now = time.time()
 
-        # 🔄 Réajustement souris à la position initiale toutes les 60 secondes
         if now - last_reset_time > 60:
             print("🔄 Réajustement souris à la position initiale.")
             pyautogui.moveTo(initial_mouse_pos.x, initial_mouse_pos.y, duration=0.2)
             last_reset_time = now
 
-        # 🔁 Changement de direction toutes les 60 secondes
         if now - last_direction_change > 60:
             print("🔁 Changement de direction.")
 
-            # Stopper les touches
             pyautogui.mouseUp(button='left')
             pyautogui.keyUp('w')
             time.sleep(0.5)
 
-            # Tourner la souris à droite ou à gauche
-            angle = 250  # Valeur à adapter selon ta sensibilité
+            angle = 250  
             if direction_right:
                 print("➡️ Tourne à droite")
                 pyautogui.moveRel(angle, 0, duration=0.2)
@@ -61,15 +55,13 @@ try:
                 print("⬅️ Tourne à gauche")
                 pyautogui.moveRel(-angle, 0, duration=0.2)
 
-            # Repart miner
             pyautogui.mouseDown(button='left')
             pyautogui.keyDown('w')
 
             direction_right = not direction_right
             last_direction_change = now
-            last_reset_time = now  # réinitialise le timer de position
+            last_reset_time = now  
 
-        # 🎯 Anti-AFK
         if now - last_action_time > random.uniform(6, 12):
             action = random.choice(['move_mouse', 'jump', 'strafe'])
 
