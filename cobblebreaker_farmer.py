@@ -14,7 +14,7 @@ def stop_listener():
 
 threading.Thread(target=stop_listener, daemon=True).start()
 
-print("🔥 Anti-AFK en attente de cuisson lancé. Appuie sur Échap pour arrêter.")
+print("🔥 Anti-AFK cuisson lancé. Appuie sur Échap pour arrêter.")
 time.sleep(2)
 
 last_action_time = time.time()
@@ -24,9 +24,20 @@ try:
         now = time.time()
 
         if now - last_action_time > random.uniform(6, 12):
-            action = random.choice(['jump', 'strafe', 'sneak'])
+            action = random.choice([
+                'move_mouse',
+                'jump',
+                'strafe',
+                'forward_backward',
+                'sneak'
+            ])
 
-            if action == 'jump':
+            if action == 'move_mouse':
+                dx = random.randint(-10, 10)
+                dy = random.randint(-5, 5)
+                pyautogui.moveRel(dx, dy, duration=0.1)
+
+            elif action == 'jump':
                 pyautogui.keyDown('space')
                 time.sleep(random.uniform(0.1, 0.3))
                 pyautogui.keyUp('space')
@@ -37,10 +48,16 @@ try:
                 time.sleep(random.uniform(0.2, 0.4))
                 pyautogui.keyUp(key)
 
+            elif action == 'forward_backward':
+                key = random.choice(['w', 's'])
+                pyautogui.keyDown(key)
+                time.sleep(random.uniform(0.2, 0.4))
+                pyautogui.keyUp(key)
+
             elif action == 'sneak':
-                pyautogui.keyDown('shift')
+                pyautogui.keyDown('ctrl')
                 time.sleep(random.uniform(0.3, 0.6))
-                pyautogui.keyUp('shift')
+                pyautogui.keyUp('ctrl')
 
             last_action_time = now
 
