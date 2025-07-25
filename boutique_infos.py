@@ -12,6 +12,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 ITEMS = {
     "tile-amethyst-ore": "Amethyst Ore",
+    "paladium-ingot": "Paladium Ore",
 }
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -40,18 +41,26 @@ def fetch_listings(item_id):
         return []
 
 def send_to_webhook(item):
+    if item['seller'] == "820c5f51-4d1a-4d63-ba6c-1126cc96ae58":
+        seller_display = "Moi"
+        color = 0xFF0000  
+    else:
+        seller_display = item['seller']
+        color = 0x00ff99  
+
     embed = {
         "title": f"📦 {item['name']}",
         "description": (
             f"**Quantité :** {item['quantity']}\n"
             f"**Prix :** {item['price']} ⛃\n"
-            f"**Vendeur :** `{item['seller']}`\n"
+            f"**Vendeur :** `{seller_display}`\n"
             f"**Date :** {item['created_at']}"
         ),
-        "color": 0x00ff99
+        "color": color
     }
     payload = {"embeds": [embed]}
     requests.post(WEBHOOK_URL, json=payload)
+
 
 def monitor_market():
     print("🚨 Surveillance du marché lancée...")
