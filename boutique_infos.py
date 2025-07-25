@@ -15,8 +15,10 @@ ITEMS = {
     "paladium-ingot": "Paladium Ore",
 }
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
 
 STATE_FILE = "last_created_timestamps.json"
+LOWEST_FILE = "lowest_prices.json"
 
 if os.path.exists(STATE_FILE):
     with open(STATE_FILE, "r") as f:
@@ -25,9 +27,19 @@ if os.path.exists(STATE_FILE):
 else:
     last_created_timestamps = {item_id: 0 for item_id in ITEMS}
 
+if os.path.exists(LOWEST_FILE):
+    with open(LOWEST_FILE, "r") as f:
+        lowest_prices = json.load(f)
+else:
+    lowest_prices = {}
+
 def save_state():
     with open(STATE_FILE, "w") as f:
         json.dump(last_created_timestamps, f)
+
+def save_lowest_prices():
+    with open(LOWEST_FILE, "w") as f:
+        json.dump(lowest_prices, f)
 
 def fetch_listings(item_id):
     url = f"https://api.paladium.games/v1/paladium/shop/market/items/{item_id}"
@@ -43,7 +55,7 @@ def fetch_listings(item_id):
 def send_to_webhook(item, is_lowest):
     color = 0x00ff99
 
-    if item['seller'] == "820c5f51-4d1a-4d63-ba6c-1126cc96ae58":
+    if item['seller'] == UUID_ME:
         seller_display = "Moi"
         color = 0xFF0000
     else:
@@ -76,26 +88,36 @@ def monitor_market():
         for item_id, item_name in ITEMS.items():
             listings = fetch_listings(item_id)
             listings_sorted = sorted(listings, key=lambda x: x["createdAt"])
-        for listing in listings_sorted:
-            created_at_raw = listing["createdAt"]
-            if created_at_raw > last_created_timestamps.get(item_id, 0):
-                last_created_timestamps[item_id] = created_at_raw
-                save_state()
 
-                other_prices = [l["price"] for l in listings if l["createdAt"] != created_at_raw]
-                is_lowest = all(listing["price"] <= price for price in other_prices) if other_prices else True
+            for listing in listings_sorted:
+                created_at_raw = listing["createdAt"]
+                if created_at_raw > last_created_timestamps.get(item_id, 0):
+                    last_created_timestamps[item_id] = created_at_raw
+                    save_state()
 
-                data = {
-                    "name": item_name,
-                    "quantity": listing["quantity"],
-                    "price": listing["price"],
-                    "seller": listing["seller"],
-                    "created_at_raw": created_at_raw,
-                    "created_at": datetime.fromtimestamp(created_at_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                }
-                send_to_webhook(data, is_lowest)
-                print(f"✅ Nouvelle vente détectée pour {item_name} (Meilleur prix: {is_lowest})")
-            time.sleep(1)
+                    price = listing["price"]
+                    quantity = listing["quantity"]
+
+                    other_prices = [l["price"] for l in listings if l["createdAt"] != created_at_raw]
+                    is_lowest = all(price <= p for p in other_prices) if other_prices else True
+
+                    current_lowest = lowest_prices.get(item_id)
+                    if current_lowest is None or price < current_lowest:
+                        lowest_prices[item_id] = price
+                        save_lowest_prices()
+
+                    data = {
+                        "name": item_name,
+                        "quantity": quantity,
+                        "price": price,
+                        "seller": listing["seller"],
+                        "created_at_raw": created_at_raw,
+                        "created_at": datetime.fromtimestamp(created_at_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    send_to_webhook(data, is_lowest)
+                    print(f"✅ Nouvelle vente détectée pour {item_name} (Meilleur prix: {is_lowest})")
+                    time.sleep(1)
+
         time.sleep(10)
 
 if __name__ == "__main__":
