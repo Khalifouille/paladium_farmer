@@ -40,27 +40,35 @@ def fetch_listings(item_id):
         print(f"Erreur pour {item_id} : {e}")
         return []
 
-def send_to_webhook(item):
+def send_to_webhook(item, is_lowest):
+    color = 0x00ff99
+
     if item['seller'] == "820c5f51-4d1a-4d63-ba6c-1126cc96ae58":
         seller_display = "Moi"
-        color = 0xFF0000  
+        color = 0xFF0000
     else:
         seller_display = item['seller']
-        color = 0x00ff99  
+
+    if item['name'] == "Paladium Ore":
+        color = 0xFFA500
+
+    description = (
+        f"**Quantité :** {item['quantity']}\n"
+        f"**Prix :** {item['price']} ⛃\n"
+        f"**Vendeur :** `{seller_display}`\n"
+        f"**Date :** {item['created_at']}\n"
+    )
+
+    if is_lowest:
+        description += "**💰 Prix le plus bas actuellement !**"
 
     embed = {
         "title": f"📦 {item['name']}",
-        "description": (
-            f"**Quantité :** {item['quantity']}\n"
-            f"**Prix :** {item['price']} ⛃\n"
-            f"**Vendeur :** `{seller_display}`\n"
-            f"**Date :** {item['created_at']}"
-        ),
+        "description": description,
         "color": color
     }
     payload = {"embeds": [embed]}
     requests.post(WEBHOOK_URL, json=payload)
-
 
 def monitor_market():
     print("🚨 Surveillance du marché lancée...")
@@ -68,21 +76,25 @@ def monitor_market():
         for item_id, item_name in ITEMS.items():
             listings = fetch_listings(item_id)
             listings_sorted = sorted(listings, key=lambda x: x["createdAt"])
-            for listing in listings_sorted:
-                created_at_raw = listing["createdAt"]
-                if created_at_raw > last_created_timestamps.get(item_id, 0):
-                    last_created_timestamps[item_id] = created_at_raw
-                    save_state()
-                    data = {
-                        "name": item_name,
-                        "quantity": listing["quantity"],
-                        "price": listing["price"],
-                        "seller": listing["seller"],
-                        "created_at_raw": created_at_raw,
-                        "created_at": datetime.fromtimestamp(created_at_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    send_to_webhook(data)
-                    print(f"✅ Nouvelle vente détectée pour {item_name}")
+        for listing in listings_sorted:
+            created_at_raw = listing["createdAt"]
+            if created_at_raw > last_created_timestamps.get(item_id, 0):
+                last_created_timestamps[item_id] = created_at_raw
+                save_state()
+
+                other_prices = [l["price"] for l in listings if l["createdAt"] != created_at_raw]
+                is_lowest = all(listing["price"] <= price for price in other_prices) if other_prices else True
+
+                data = {
+                    "name": item_name,
+                    "quantity": listing["quantity"],
+                    "price": listing["price"],
+                    "seller": listing["seller"],
+                    "created_at_raw": created_at_raw,
+                    "created_at": datetime.fromtimestamp(created_at_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                }
+                send_to_webhook(data, is_lowest)
+                print(f"✅ Nouvelle vente détectée pour {item_name} (Meilleur prix: {is_lowest})")
             time.sleep(1)
         time.sleep(10)
 
