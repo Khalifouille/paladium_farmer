@@ -39,57 +39,55 @@ def fetch_listings(item_id):
         print(f"❌ Erreur pour {item_id} : {e}")
         return []
 
-def send_embed_dashboard(embed_data):
-    payload = {"embeds": embed_data}
+def send_embed(embed):
+    payload = {"embeds": [embed]}
     requests.post(WEBHOOK_URL, json=payload)
 
 def format_price(p):
     return f"{p:,}".replace(",", " ")
 
 def monitor_market():
-    print("🚀 Surveillance du marché (mode dashboard)...")
+    print("🚀 Surveillance du marché...")
     while True:
-        embeds = []
+        description = ""
+        color = 0x800080 
+        has_paladium = False
 
         for item_id, item_name in ITEMS.items():
             listings = fetch_listings(item_id)
             if not listings:
                 continue
 
-            # Trier par prix croissant
             listings.sort(key=lambda x: x["price"])
-            lowest_listing = listings[0]
-
-            seller = "Moi" if lowest_listing["seller"] == UUID_ME else lowest_listing["seller"]
-            price = lowest_listing["price"]
-            quantity = lowest_listing["quantity"]
-            created_at = datetime.fromtimestamp(lowest_listing["createdAt"] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            lowest = listings[0]
+            price = lowest["price"]
+            quantity = lowest["quantity"]
+            created_at = datetime.fromtimestamp(lowest["createdAt"] / 1000).strftime('%d/%m %H:%M')
+            seller = "Moi" if lowest["seller"] == UUID_ME else lowest["seller"]
 
             lowest_prices[item_id] = price
             save_lowest_prices()
 
-            color = 0xFFA500 if "paladium" in item_id else 0x800080  
+            if "paladium" in item_id:
+                has_paladium = True
 
-            embed = {
-                "title": f"📦 {item_name}",
-                "description": (
-                    f"**Prix le plus bas actuel :** {format_price(price)} ⛃\n"
-                    f"**Quantité :** {quantity}\n"
-                    f"**Vendeur :** `{seller}`\n"
-                    f"**Mise en vente :** {created_at}"
-                ),
-                "color": color
-            }
+            description += (
+                f"**{item_name}**\n"
+                f"🪙 `{format_price(price)} ⛃` | 📦 `{quantity}` | 👤 `{seller}` | ⏱ `{created_at}`\n\n"
+            )
 
-            embeds.append(embed)
-
-        if embeds:
-            send_embed_dashboard(embeds)
-            print("✅ Dashboard envoyé avec les prix les plus bas.")
+        if not description:
+            print("⚠️ Aucun item détecté.")
         else:
-            print("⚠️ Aucun item récupéré.")
+            embed = {
+                "title": "📊 Résumé du Marché - Meilleurs prix actuels",
+                "description": description.strip(),
+                "color": 0xFFA500 if has_paladium else 0x800080
+            }
+            send_embed(embed)
+            print("✅ Embed marché envoyé.")
 
-        time.sleep(30)  
+        time.sleep(30)
 
 if __name__ == "__main__":
     monitor_market()
