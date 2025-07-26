@@ -17,25 +17,13 @@ ITEMS = {
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
 
-STATE_FILE = "last_created_timestamps.json"
 LOWEST_FILE = "lowest_prices.json"
-
-if os.path.exists(STATE_FILE):
-    with open(STATE_FILE, "r") as f:
-        last_created_timestamps = json.load(f)
-    last_created_timestamps = {k: int(v) for k, v in last_created_timestamps.items()}
-else:
-    last_created_timestamps = {item_id: 0 for item_id in ITEMS}
 
 if os.path.exists(LOWEST_FILE):
     with open(LOWEST_FILE, "r") as f:
         lowest_prices = json.load(f)
 else:
     lowest_prices = {}
-
-def save_state():
-    with open(STATE_FILE, "w") as f:
-        json.dump(last_created_timestamps, f)
 
 def save_lowest_prices():
     with open(LOWEST_FILE, "w") as f:
@@ -44,80 +32,67 @@ def save_lowest_prices():
 def fetch_listings(item_id):
     url = f"https://api.paladium.games/v1/paladium/shop/market/items/{item_id}"
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=HEADERS, timeout=5)
         response.raise_for_status()
-        data = response.json()
-        return data.get("listing", [])
+        return response.json().get("listing", [])
     except Exception as e:
-        print(f"Erreur pour {item_id} : {e}")
+        print(f"❌ Erreur pour {item_id} : {e}")
         return []
 
-def send_to_webhook(item, is_lowest):
-    color = 0x00ff99
-    seller_display = item['seller']
+def generate_dashboard_embed():
+    embeds = []
+    for item_id, item_name in ITEMS.items():
+        listings = fetch_listings(item_id)
+        if not listings:
+            continue
 
-    if item['name'] == "Paladium Ore":
-        color = 0xFFA500
+        listings_sorted = sorted(listings, key=lambda x: x["price"])
+        lowest_listing = listings_sorted[0]
+        lowest_price = lowest_listing["price"]
+        seller = lowest_listing["seller"]
 
-    if item['seller'] == UUID_ME:
-        seller_display = "Moi"
-        color = 0xFF0000
+        my_listings = [l for l in listings if l["seller"] == UUID_ME]
+        my_price = my_listings[0]["price"] if my_listings else None
 
-    description = (
-        f"**Quantité :** {item['quantity']}\n"
-        f"**Prix :** {item['price']} ⛃\n"
-        f"**Vendeur :** `{seller_display}`\n"
-        f"**Date :** {item['created_at']}\n"
-    )
+        # Suggestion de prix
+        suggested_price = lowest_price if seller == UUID_ME else max(1, lowest_price - 1)
+        is_me_lowest = seller == UUID_ME
 
-    if is_lowest:
-        description += "**💰 Prix le plus bas actuellement !**"
+        lowest_prices[item_id] = lowest_price
+        save_lowest_prices()
 
-    embed = {
-        "title": f"📦 {item['name']}",
-        "description": description,
-        "color": color
-    }
-    payload = {"embeds": [embed]}
-    requests.post(WEBHOOK_URL, json=payload)
+        embed = {
+            "title": f"📊 {item_name}",
+            "color": 0x00ff99 if is_me_lowest else 0xFFA500,
+            "fields": [
+                {"name": "📉 Prix le + bas", "value": f"{lowest_price} ⛃ (par {'toi' if is_me_lowest else 'autre'})", "inline": True},
+                {"name": "📦 Ton prix", "value": f"{my_price} ⛃" if my_price else "Aucune vente", "inline": True},
+                {"name": "💡 À vendre", "value": f"{suggested_price} ⛃", "inline": True}
+            ],
+            "footer": {"text": f"Mis à jour le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+        }
 
-def monitor_market():
-    print("🚨 Surveillance du marché lancée...")
+        embeds.append(embed)
+
+    return embeds
+
+def send_dashboard():
+    embeds = generate_dashboard_embed()
+    if not embeds:
+        return
+
+    payload = {"embeds": embeds}
+    try:
+        requests.post(WEBHOOK_URL, json=payload)
+        print(f"📤 Dashboard envoyé à {datetime.now().strftime('%H:%M:%S')}")
+    except Exception as e:
+        print(f"❌ Erreur lors de l'envoi du webhook : {e}")
+
+def monitor_loop():
+    print("🚨 Surveillance du marché (dashboard toutes les 30s)...")
     while True:
-        for item_id, item_name in ITEMS.items():
-            listings = fetch_listings(item_id)
-            listings_sorted = sorted(listings, key=lambda x: x["createdAt"])
-
-            for listing in listings_sorted:
-                created_at_raw = listing["createdAt"]
-                if created_at_raw > last_created_timestamps.get(item_id, 0):
-                    last_created_timestamps[item_id] = created_at_raw
-                    save_state()
-
-                    price = listing["price"]
-                    quantity = listing["quantity"]
-
-                    other_prices = [l["price"] for l in listings if l["createdAt"] != created_at_raw]
-                    is_lowest = all(price <= p for p in other_prices) if other_prices else True
-
-                    current_lowest = lowest_prices.get(item_id)
-                    if current_lowest is None or price < current_lowest:
-                        lowest_prices[item_id] = price
-                        save_lowest_prices()
-
-                    data = {
-                        "name": item_name,
-                        "quantity": quantity,
-                        "price": price,
-                        "seller": listing["seller"],
-                        "created_at_raw": created_at_raw,
-                        "created_at": datetime.fromtimestamp(created_at_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    send_to_webhook(data, is_lowest)
-                    print(f"✅ Nouvelle vente détectée pour {item_name} (Meilleur prix: {is_lowest})")
-                    time.sleep(1)
-
-        time.sleep(10)
+        send_dashboard()
+        time.sleep(30)
 
 if __name__ == "__main__":
-    monitor_market()
+    monitor_loop()
