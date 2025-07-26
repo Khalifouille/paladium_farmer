@@ -54,15 +54,14 @@ def fetch_listings(item_id):
 
 def send_to_webhook(item, is_lowest):
     color = 0x00ff99
+    seller_display = item['seller']
+
+    if item['name'] == "Paladium Ore":
+        color = 0xFFA500
 
     if item['seller'] == UUID_ME:
         seller_display = "Moi"
         color = 0xFF0000
-    else:
-        seller_display = item['seller']
-
-    if item['name'] == "Paladium Ore":
-        color = 0xFFA500
 
     description = (
         f"**Quantité :** {item['quantity']}\n"
