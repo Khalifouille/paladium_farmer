@@ -50,7 +50,7 @@ def monitor_market():
     print("🚀 Surveillance du marché...")
     while True:
         description = ""
-        color = 0x800080 
+        color = 0x800080  
         has_paladium = False
 
         for item_id, item_name in ITEMS.items():
@@ -65,6 +65,8 @@ def monitor_market():
             created_at = datetime.fromtimestamp(lowest["createdAt"] / 1000).strftime('%d/%m %H:%M')
             seller = "Moi" if lowest["seller"] == UUID_ME else lowest["seller"]
 
+            suggested_price = max(price - 1, 1)
+
             lowest_prices[item_id] = price
             save_lowest_prices()
 
@@ -73,14 +75,15 @@ def monitor_market():
 
             description += (
                 f"**{item_name}**\n"
-                f"🪙 `{format_price(price)} ⛃` | 📦 `{quantity}` | 👤 `{seller}` | ⏱ `{created_at}`\n\n"
+                f"🪙 `{format_price(price)} ⛃` | 📦 `{quantity}` | 👤 `{seller}` | ⏱ `{created_at}`\n"
+                f"💡 **Vends à :** `{format_price(suggested_price)} ⛃`\n\n"
             )
 
         if not description:
             print("⚠️ Aucun item détecté.")
         else:
             embed = {
-                "title": "📊 Résumé du Marché - Meilleurs prix actuels",
+                "title": "📊 Résumé du Marché - Meilleurs prix & Suggestions",
                 "description": description.strip(),
                 "color": 0xFFA500 if has_paladium else 0x800080
             }
