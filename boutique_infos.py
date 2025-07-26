@@ -12,7 +12,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 ITEMS = {
     "tile-amethyst-ore": "Amethyst Ore",
-    "paladium-ingot": "Paladium Ore",
+    "paladium-ingot": "Paladium Ingot",
 }
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
@@ -39,60 +39,57 @@ def fetch_listings(item_id):
         print(f"❌ Erreur pour {item_id} : {e}")
         return []
 
-def generate_dashboard_embed():
-    embeds = []
-    for item_id, item_name in ITEMS.items():
-        listings = fetch_listings(item_id)
-        if not listings:
-            continue
+def send_embed_dashboard(embed_data):
+    payload = {"embeds": embed_data}
+    requests.post(WEBHOOK_URL, json=payload)
 
-        listings_sorted = sorted(listings, key=lambda x: x["price"])
-        lowest_listing = listings_sorted[0]
-        lowest_price = lowest_listing["price"]
-        seller = lowest_listing["seller"]
+def format_price(p):
+    return f"{p:,}".replace(",", " ")
 
-        my_listings = [l for l in listings if l["seller"] == UUID_ME]
-        my_price = my_listings[0]["price"] if my_listings else None
-
-        # Suggestion de prix
-        suggested_price = lowest_price if seller == UUID_ME else max(1, lowest_price - 1)
-        is_me_lowest = seller == UUID_ME
-
-        lowest_prices[item_id] = lowest_price
-        save_lowest_prices()
-
-        embed = {
-            "title": f"📊 {item_name}",
-            "color": 0x00ff99 if is_me_lowest else 0xFFA500,
-            "fields": [
-                {"name": "📉 Prix le + bas", "value": f"{lowest_price} ⛃ (par {'toi' if is_me_lowest else 'autre'})", "inline": True},
-                {"name": "📦 Ton prix", "value": f"{my_price} ⛃" if my_price else "Aucune vente", "inline": True},
-                {"name": "💡 À vendre", "value": f"{suggested_price} ⛃", "inline": True}
-            ],
-            "footer": {"text": f"Mis à jour le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
-        }
-
-        embeds.append(embed)
-
-    return embeds
-
-def send_dashboard():
-    embeds = generate_dashboard_embed()
-    if not embeds:
-        return
-
-    payload = {"embeds": embeds}
-    try:
-        requests.post(WEBHOOK_URL, json=payload)
-        print(f"📤 Dashboard envoyé à {datetime.now().strftime('%H:%M:%S')}")
-    except Exception as e:
-        print(f"❌ Erreur lors de l'envoi du webhook : {e}")
-
-def monitor_loop():
-    print("🚨 Surveillance du marché (dashboard toutes les 30s)...")
+def monitor_market():
+    print("🚀 Surveillance du marché (mode dashboard)...")
     while True:
-        send_dashboard()
-        time.sleep(30)
+        embeds = []
+
+        for item_id, item_name in ITEMS.items():
+            listings = fetch_listings(item_id)
+            if not listings:
+                continue
+
+            # Trier par prix croissant
+            listings.sort(key=lambda x: x["price"])
+            lowest_listing = listings[0]
+
+            seller = "Moi" if lowest_listing["seller"] == UUID_ME else lowest_listing["seller"]
+            price = lowest_listing["price"]
+            quantity = lowest_listing["quantity"]
+            created_at = datetime.fromtimestamp(lowest_listing["createdAt"] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+            lowest_prices[item_id] = price
+            save_lowest_prices()
+
+            color = 0xFFA500 if "paladium" in item_id else 0x800080  
+
+            embed = {
+                "title": f"📦 {item_name}",
+                "description": (
+                    f"**Prix le plus bas actuel :** {format_price(price)} ⛃\n"
+                    f"**Quantité :** {quantity}\n"
+                    f"**Vendeur :** `{seller}`\n"
+                    f"**Mise en vente :** {created_at}"
+                ),
+                "color": color
+            }
+
+            embeds.append(embed)
+
+        if embeds:
+            send_embed_dashboard(embeds)
+            print("✅ Dashboard envoyé avec les prix les plus bas.")
+        else:
+            print("⚠️ Aucun item récupéré.")
+
+        time.sleep(30)  
 
 if __name__ == "__main__":
-    monitor_loop()
+    monitor_market()
