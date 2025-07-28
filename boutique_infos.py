@@ -45,11 +45,11 @@ def fetch_listings(item_id):
 def send_or_edit_embed(embed):
     message_id = None
     if os.path.exists(MESSAGE_FILE):
-        with open(MESSAGE_FILE, "r") as f:
-            try:
+        try:
+            with open(MESSAGE_FILE, "r") as f:
                 message_id = json.load(f).get("message_id")
-            except:
-                pass
+        except:
+            pass
 
     payload = {"embeds": [embed]}
 
@@ -58,19 +58,21 @@ def send_or_edit_embed(embed):
             f"https://discord.com/api/webhooks/{WEBHOOK_ID}/{WEBHOOK_TOKEN}/messages/{message_id}",
             json=payload
         )
-        if r.status_code != 200:
-            print(f"🔁 Erreur modification message : {r.status_code} - {r.text}")
+        if r.status_code == 200:
+            print("🔁 Message mis à jour.")
+            return
+        else:
+            print(f"⚠️ Erreur modification message ({r.status_code}) : {r.text}")
             message_id = None
 
-    if not message_id:
-        r = requests.post(WEBHOOK_URL, json=payload)
-        if r.status_code == 200:
-            message_id = r.json()["id"]
-            with open(MESSAGE_FILE, "w") as f:
-                json.dump({"message_id": message_id}, f)
-            print("📤 Message initial envoyé.")
-        else:
-            print(f"❌ Erreur envoi message : {r.status_code} - {r.text}")
+    r = requests.post(WEBHOOK_URL, json=payload)
+    if r.status_code == 200:
+        message_id = r.json().get("id")
+        with open(MESSAGE_FILE, "w") as f:
+            json.dump({"message_id": message_id}, f)
+        print("📤 Nouveau message envoyé.")
+    else:
+        print(f"❌ Erreur envoi message : {r.status_code} - {r.text}")
 
 def format_price(p):
     return f"{p:,}".replace(",", " ")
@@ -79,7 +81,6 @@ def monitor_market():
     print("🚀 Surveillance du marché...")
     while True:
         description = ""
-        color = 0x800080  
         has_paladium = False
 
         for item_id, item_name in ITEMS.items():
@@ -93,8 +94,8 @@ def monitor_market():
             quantity = lowest["quantity"]
             created_at = datetime.fromtimestamp(lowest["createdAt"] / 1000).strftime('%d/%m %H:%M')
             seller = "Moi" if lowest["seller"] == UUID_ME else lowest["seller"]
-
             suggested_price = max(price - 1, 1)
+
             lowest_prices[item_id] = price
             save_lowest_prices()
 
@@ -113,10 +114,10 @@ def monitor_market():
             embed = {
                 "title": "📊 Résumé du Marché - Meilleurs prix & Suggestions",
                 "description": description.strip(),
-                "color": 0xFFA500 if has_paladium else 0x800080
+                "color": 0xFFA500 if has_paladium else 0x800080, 
+                "timestamp": datetime.utcnow().isoformat()
             }
             send_or_edit_embed(embed)
-            print("✅ Embed marché envoyé ou mis à jour.")
 
         time.sleep(30)
 
