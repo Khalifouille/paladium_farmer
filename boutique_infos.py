@@ -62,7 +62,6 @@ def save_message_id(mid: str):
 # ---- API ---------------------------------------------------------------
 
 def fetch_listings(item_id: str):
-    """Récupère toutes les annonces en cours d’un item."""
     url = f"https://api.paladium.games/v1/paladium/shop/market/items/{item_id}"
     try:
         r = requests.get(url, headers=API_HEADERS, timeout=6)
@@ -181,7 +180,7 @@ def build_dashboard():
     )
 
     embed = {
-        "title": "PALADIUM - Dashboard Marché",
+        "title": "Paladium - Dashboard Marché",
         "description": description.strip(),
         "fields": [
             {
