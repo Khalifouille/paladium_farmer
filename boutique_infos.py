@@ -169,15 +169,24 @@ def build_dashboard():
     if not market_lines:
         description = "⚠️ Aucun item détecté pour le moment."
     else:
-        description = "### 🏷️ Meilleurs prix du marché\n" + "\n".join(market_lines)
+        description = (
+            "🔎 **Statistiques pour les ventes**\n\n" +
+            "\n━━━━━━━━━━━━━━━\n\n".join(market_lines)
+        )
+
+    my_annonces_value = (
+        "\n━━━━━━━━━━━━━━━\n"
+        "\n📦 **Tes annonces en cours**\n\n" +
+        ("\n\n".join(my_lines) if my_lines else "✅ Tu as tout vendu !")
+    )
 
     embed = {
-        "title": "📊 Résumé du Marché — Meilleurs prix & Tes annonces",
+        "title": "PALADIUM - Dashboard Marché",
         "description": description.strip(),
         "fields": [
             {
-                "name": "🧾 Tes annonces en cours",
-                "value": "\n\n".join(my_lines)[:1024] if my_lines else "✅ Tu as tout vendu !",
+                "name": "⠀",
+                "value": my_annonces_value[:1024],
                 "inline": False
             }
         ],
