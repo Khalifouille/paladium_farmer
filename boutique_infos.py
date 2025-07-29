@@ -190,6 +190,9 @@ def build_dashboard():
             }
         ],
         "color": 0xFFA500 if has_paladium else 0x800080,
+        "thumbnail": {
+            "url": f"https://api.mineatar.io/face/{UUID_ME}?scale=12"
+        },
         "footer": {
             "text": "Dernière mise à jour"
         },
