@@ -14,8 +14,9 @@ WEBHOOK_ID = WEBHOOK_URL.split('/')[-2]
 WEBHOOK_TOKEN = WEBHOOK_URL.split('/')[-1]
 
 ITEMS = {
-    "tile-amethyst-ore": "Amethyst Ore",
-    "paladium-ingot": "Paladium Ingot",
+    "tile-amethyst-ore": "Bloc d'Amethyst",
+    "paladium-ingot": "Lingot de Paladium",
+    "food": "Bouffe du Dancarock",
 }
 
 API_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
@@ -24,6 +25,7 @@ UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
 LOWEST_FILE = "lowest_prices.json"
 MESSAGE_FILE = "last_message.json"
 LAST_ANNOUNCES_FILE = "my_last_announces.json"
+FOOD_ALERT_FILE = "food_alert_message.json"
 
 # ---- Utils --------------------------------------------------------------
 
@@ -59,6 +61,25 @@ def get_last_message_id():
 
 def save_message_id(mid: str):
     save_json(MESSAGE_FILE, {"message_id": mid})
+
+def get_food_alert_message_id():
+    data = load_json(FOOD_ALERT_FILE, {})
+    return data.get("message_id")
+
+def save_food_alert_message_id(mid: str):
+    save_json(FOOD_ALERT_FILE, {"message_id": mid})
+
+def delete_food_alert_message():
+    mid = get_food_alert_message_id()
+    if mid:
+        url = f"https://discord.com/api/webhooks/{WEBHOOK_ID}/{WEBHOOK_TOKEN}/messages/{mid}"
+        print(f"➡️ Suppression du message ID : {mid}")
+        resp = requests.delete(url, headers={"Content-Type": "application/json"})
+        if resp.status_code in (200, 204):
+            print("🗑️ Alerte nourriture supprimée.")
+            save_json(FOOD_ALERT_FILE, {})
+        else:
+            print(f"❌ Échec suppression alerte nourriture : {resp.status_code} - {resp.text}")
 
 # ---- API ---------------------------------------------------------------
 
@@ -221,11 +242,57 @@ def build_dashboard():
 
 # ---- Loop --------------------------------------------------------------
 
+def monitor_food_alert():
+    listings = fetch_listings("food")
+    cheap_food = [item for item in listings if item["price"] <= 4]
+
+    if cheap_food:
+        cheapest = min(cheap_food, key=lambda x: x["price"])
+        price = cheapest["price"]
+        quantity = cheapest["quantity"]
+        seller = cheapest["seller"]
+        time_posted = short_dt(cheapest["createdAt"])
+
+        embed = {
+            "title": "🍗 Alerte Nourriture Pas Chère !",
+            "description": f"Un item **Food** est en vente à **{format_price(price)} ⛃** seulement !",
+            "fields": [
+                {"name": "Quantité", "value": str(quantity), "inline": True},
+                {"name": "Vendeur", "value": seller, "inline": True},
+                {"name": "Mis en vente", "value": time_posted, "inline": True}
+            ],
+            "color": 0x00FF00,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        payload = {"embeds": [embed]}
+        msg_id = get_food_alert_message_id()
+
+        if msg_id:
+            resp = requests.patch(
+                f"https://discord.com/api/webhooks/{WEBHOOK_ID}/{WEBHOOK_TOKEN}/messages/{msg_id}",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            if resp.status_code == 200:
+                print("🔁 Alerte nourriture mise à jour.")
+                return
+        resp = requests.post(WEBHOOK_URL + "?wait=true", json=payload, headers={"Content-Type": "application/json"})
+        if resp.status_code == 200:
+            mid = resp.json().get("id")
+            if mid:
+                save_food_alert_message_id(mid)
+                print("📤 Alerte nourriture envoyée.")
+    else:
+        delete_food_alert_message()
+        print("❌ Plus d’alerte nourriture (aucune en dessous de 5⛃).")
+
 def monitor_market():
     print("🚀 Dashboard marché lancé…")
     while True:
         embed = build_dashboard()
         send_or_edit_embed(embed)
+        monitor_food_alert()
         time.sleep(30)
 
 if __name__ == "__main__":
