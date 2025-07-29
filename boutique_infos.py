@@ -54,9 +54,12 @@ def get_last_message_id():
     return None
 
 def save_message_id(message_id):
-    with open(MESSAGE_FILE, "w") as f:
-        json.dump({"message_id": message_id}, f)
-    print(f"💾 message_id sauvegardé : {message_id}")
+    try:
+        with open(MESSAGE_FILE, "w") as f:
+            json.dump({"message_id": message_id}, f)
+        print(f"💾 message_id sauvegardé : {message_id}")
+    except Exception as e:
+        print(f"❌ Erreur sauvegarde message_id : {e}")
 
 def send_or_edit_embed(embed):
     payload = {"embeds": [embed]}
@@ -72,12 +75,18 @@ def send_or_edit_embed(embed):
             return
         else:
             print(f"❌ PATCH échoué : {r.status_code} - {r.text}")
-            message_id = None
+            message_id = None  
 
-    r = requests.post(WEBHOOK_URL, json=payload)
-    if r.status_code == 200:
-        message_id = r.json()["id"]
-        save_message_id(message_id)
+    r = requests.post(WEBHOOK_URL + "?wait=true", json=payload) 
+    if r.status_code in [200, 204]:
+        try:
+            message_id = r.json().get("id")
+            if message_id:
+                save_message_id(message_id)
+            else:
+                print("⚠️ Aucune ID récupérée dans la réponse.")
+        except Exception as e:
+            print(f"⚠️ Erreur récupération ID : {e}")
         print("📤 Message envoyé avec succès.")
     else:
         print(f"❌ POST échoué : {r.status_code} - {r.text}")
