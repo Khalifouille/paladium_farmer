@@ -124,7 +124,6 @@ def build_dashboard():
     market_lines = []
     my_lines = []
     has_paladium = False
-    my_by_item = defaultdict(list)
 
     for item_id, item_name in ITEMS.items():
         listings = fetch_listings(item_id)
@@ -147,34 +146,16 @@ def build_dashboard():
             f"💡 **Vendre à :** `{format_price(suggested)} ⛃`\n"
         )
 
-        mine = [l for l in listings if l["seller"] == UUID_ME]
-        if mine:
-            for l in mine:
-                lp = l["price"]
-                lq = l["quantity"]
-                lt = short_dt(l["createdAt"])
-                delta = lp - best_price
-                if delta == 0:
-                    status = "✅ Plus bas"
-                elif delta > 0:
-                    status = f"❌ +{format_price(delta)}"
-                else:
-                    status = f"⭐ {format_price(-delta)} moins cher"
-
-                my_by_item[item_name].append(
-                    f"• `{lq}x` @ `{format_price(lp)} ⛃` — {status} (⏱ {lt})"
-                )
-
         if "paladium" in item_id:
             has_paladium = True
 
     save_lowest_prices()
 
-    for name, lines in my_by_item.items():
-        my_lines.append(f"**{name}**\n" + "\n".join(lines))
-
     current_announces = fetch_my_announces()
     total_gains = 0
+    total_potential_gains = 0
+    annonces_lines = []
+
     previous_announces = load_json(LAST_ANNOUNCES_FILE, [])
     prev_set = {(a["item"]["name"], a["price"], a["item"]["quantity"]) for a in previous_announces}
     curr_set = {(a["item"]["name"], a["price"], a["item"]["quantity"]) for a in current_announces}
@@ -185,14 +166,14 @@ def build_dashboard():
 
     if current_announces:
         for item in current_announces:
-            raw_name = item["item"]["name"].replace("palamod:", "").replace("tile.", "")
+            raw_name = item["item"]["name"].replace("palamod:", "").replace("tile.", "").replace("-", " ").title()
             qte = item["item"]["quantity"]
-            prix = format_price(item["price"])
-            prix_pb = item.get("pricePb", 0)
-            created = short_dt(item["createdAt"])
-            my_lines.append(f"• `{raw_name}` x{qte} — {prix} ⛃ / {prix_pb} pb (⏱ {created})")
-    elif not my_lines:
-        my_lines.append("✅ Tu as tout vendu !")
+            prix_unitaire = item["price"]
+            prix_total = prix_unitaire * qte
+            total_potential_gains += prix_total
+            annonces_lines.append(f"• {qte}x {raw_name} @ {format_price(prix_unitaire)} ⛃")
+    else:
+        annonces_lines.append("✅ Tu as tout vendu !")
 
     save_json(LAST_ANNOUNCES_FILE, current_announces)
 
@@ -207,11 +188,14 @@ def build_dashboard():
     my_annonces_value = (
         "\n━━━━━━━━━━━━━━━\n"
         "\n📦 **Tes annonces en cours**\n\n" +
-        ("\n\n".join(my_lines) if my_lines else "✅ Tu as tout vendu !")
+        "\n".join(annonces_lines)
     )
 
+    if total_potential_gains > 0:
+        my_annonces_value += f"\n\n💰 Tu pourrais gagner **{format_price(total_potential_gains)} ⛃** si tout se vend."
+
     if total_gains > 0:
-        my_annonces_value += f"\n\n💰 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
+        my_annonces_value += f"\n💸 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
 
     embed = {
         "title": "Paladium - Dashboard Marché",
