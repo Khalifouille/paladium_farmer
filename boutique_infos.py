@@ -23,6 +23,7 @@ UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
 
 LOWEST_FILE = "lowest_prices.json"
 MESSAGE_FILE = "last_message.json"
+LAST_ANNOUNCES_FILE = "my_last_announces.json"
 
 # ---- Utils --------------------------------------------------------------
 
@@ -71,6 +72,19 @@ def fetch_listings(item_id: str):
         print(f"❌ Erreur pour {item_id} : {e}")
         return []
 
+def fetch_my_announces():
+    try:
+        r = requests.get(
+            f"https://api.paladium.games/v1/paladium/shop/market/players/{UUID_ME}/items",
+            headers=API_HEADERS,
+            timeout=6
+        )
+        r.raise_for_status()
+        return r.json().get("data", [])
+    except Exception as e:
+        print(f"❌ Erreur récupération annonces perso : {e}")
+        return []
+
 # ---- Embed I/O ---------------------------------------------------------
 
 def send_or_edit_embed(embed):
@@ -106,24 +120,10 @@ def send_or_edit_embed(embed):
 
 # ---- Dashboard builder -------------------------------------------------
 
-def fetch_my_announces():
-    try:
-        r = requests.get(
-            f"https://api.paladium.games/v1/paladium/shop/market/players/{UUID_ME}/items",
-            headers=API_HEADERS,
-            timeout=6
-        )
-        r.raise_for_status()
-        return r.json().get("data", [])
-    except Exception as e:
-        print(f"❌ Erreur récupération annonces perso : {e}")
-        return []
-
 def build_dashboard():
     market_lines = []
     my_lines = []
     has_paladium = False
-
     my_by_item = defaultdict(list)
 
     for item_id, item_name in ITEMS.items():
@@ -132,7 +132,6 @@ def build_dashboard():
             continue
 
         listings.sort(key=lambda x: x["price"])
-
         best = listings[0]
         best_price = best["price"]
         best_qty = best["quantity"]
@@ -174,10 +173,18 @@ def build_dashboard():
     for name, lines in my_by_item.items():
         my_lines.append(f"**{name}**\n" + "\n".join(lines))
 
-    external_announces = fetch_my_announces()
-    if external_announces:
-        ##my_lines.append("**🧾 Autres annonces en cours**")
-        for item in external_announces:
+    current_announces = fetch_my_announces()
+    total_gains = 0
+    previous_announces = load_json(LAST_ANNOUNCES_FILE, [])
+    prev_set = {(a["item"]["name"], a["price"], a["item"]["quantity"]) for a in previous_announces}
+    curr_set = {(a["item"]["name"], a["price"], a["item"]["quantity"]) for a in current_announces}
+    sold = prev_set - curr_set
+
+    for name, price, qty in sold:
+        total_gains += price * qty
+
+    if current_announces:
+        for item in current_announces:
             raw_name = item["item"]["name"].replace("palamod:", "").replace("tile.", "")
             qte = item["item"]["quantity"]
             prix = format_price(item["price"])
@@ -186,6 +193,8 @@ def build_dashboard():
             my_lines.append(f"• `{raw_name}` x{qte} — {prix} ⛃ / {prix_pb} pb (⏱ {created})")
     elif not my_lines:
         my_lines.append("✅ Tu as tout vendu !")
+
+    save_json(LAST_ANNOUNCES_FILE, current_announces)
 
     if not market_lines:
         description = "⚠️ Aucun item détecté pour le moment."
@@ -200,6 +209,9 @@ def build_dashboard():
         "\n📦 **Tes annonces en cours**\n\n" +
         ("\n\n".join(my_lines) if my_lines else "✅ Tu as tout vendu !")
     )
+
+    if total_gains > 0:
+        my_annonces_value += f"\n\n💰 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
 
     embed = {
         "title": "Paladium - Dashboard Marché",
