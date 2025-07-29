@@ -106,6 +106,19 @@ def send_or_edit_embed(embed):
 
 # ---- Dashboard builder -------------------------------------------------
 
+def fetch_my_announces():
+    try:
+        r = requests.get(
+            f"https://api.paladium.games/v1/paladium/shop/market/players/{UUID_ME}/items",
+            headers=API_HEADERS,
+            timeout=6
+        )
+        r.raise_for_status()
+        return r.json().get("data", [])
+    except Exception as e:
+        print(f"❌ Erreur récupération annonces perso : {e}")
+        return []
+
 def build_dashboard():
     market_lines = []
     my_lines = []
@@ -128,7 +141,6 @@ def build_dashboard():
         suggested = max(best_price - (0 if best_seller == "Moi" else 1), 1)
 
         lowest_prices[item_id] = best_price
-
 
         market_lines.append(
             f"**{item_name}**\n"
@@ -159,10 +171,20 @@ def build_dashboard():
 
     save_lowest_prices()
 
-    if my_by_item:
-        for name, lines in my_by_item.items():
-            my_lines.append(f"**{name}**\n" + "\n".join(lines))
-    else:
+    for name, lines in my_by_item.items():
+        my_lines.append(f"**{name}**\n" + "\n".join(lines))
+
+    external_announces = fetch_my_announces()
+    if external_announces:
+        ##my_lines.append("**🧾 Autres annonces en cours**")
+        for item in external_announces:
+            raw_name = item["item"]["name"].replace("palamod:", "").replace("tile.", "")
+            qte = item["item"]["quantity"]
+            prix = format_price(item["price"])
+            prix_pb = item.get("pricePb", 0)
+            created = short_dt(item["createdAt"])
+            my_lines.append(f"• `{raw_name}` x{qte} — {prix} ⛃ / {prix_pb} pb (⏱ {created})")
+    elif not my_lines:
         my_lines.append("✅ Tu as tout vendu !")
 
     if not market_lines:
