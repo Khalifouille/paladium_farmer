@@ -54,12 +54,9 @@ def get_last_message_id():
     return None
 
 def save_message_id(message_id):
-    try:
-        with open(MESSAGE_FILE, "w") as f:
-            json.dump({"message_id": message_id}, f)
-        print(f"💾 message_id sauvegardé : {message_id}")
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde message_id : {e}")
+    with open(MESSAGE_FILE, "w") as f:
+        json.dump({"message_id": message_id}, f)
+    print(f"💾 message_id sauvegardé : {message_id}")
 
 def send_or_edit_embed(embed):
     payload = {"embeds": [embed]}
@@ -75,18 +72,12 @@ def send_or_edit_embed(embed):
             return
         else:
             print(f"❌ PATCH échoué : {r.status_code} - {r.text}")
-            message_id = None  
+            message_id = None
 
-    r = requests.post(WEBHOOK_URL + "?wait=true", json=payload) 
-    if r.status_code in [200, 204]:
-        try:
-            message_id = r.json().get("id")
-            if message_id:
-                save_message_id(message_id)
-            else:
-                print("⚠️ Aucune ID récupérée dans la réponse.")
-        except Exception as e:
-            print(f"⚠️ Erreur récupération ID : {e}")
+    r = requests.post(WEBHOOK_URL, json=payload)
+    if r.status_code == 200:
+        message_id = r.json()["id"]
+        save_message_id(message_id)
         print("📤 Message envoyé avec succès.")
     else:
         print(f"❌ POST échoué : {r.status_code} - {r.text}")
@@ -97,9 +88,11 @@ def format_price(p):
 def monitor_market():
     print("🚀 Surveillance du marché...")
     while True:
-        description = ""
+        market_description = ""
+        my_listings_description = ""
         color = 0x800080  
         has_paladium = False
+        has_my_listings = False
 
         for item_id, item_name in ITEMS.items():
             listings = fetch_listings(item_id)
@@ -120,18 +113,39 @@ def monitor_market():
             if "paladium" in item_id:
                 has_paladium = True
 
-            description += (
+            market_description += (
                 f"**{item_name}**\n"
                 f"🪙 `{format_price(price)} ⛃` | 📦 `{quantity}` | 👤 `{seller}` | ⏱ `{created_at}`\n"
                 f"💡 **Vends à :** `{format_price(suggested_price)} ⛃`\n\n"
             )
 
-        if not description:
+            my_listings = [l for l in listings if l["seller"] == UUID_ME]
+            if my_listings:
+                has_my_listings = True
+                for l in my_listings:
+                    l_price = l["price"]
+                    l_quantity = l["quantity"]
+                    l_created = datetime.fromtimestamp(l["createdAt"] / 1000).strftime('%d/%m %H:%M')
+                    my_listings_description += (
+                        f"**{item_name}** - `{l_quantity}x` à `{format_price(l_price)} ⛃` (⏱ {l_created})\n"
+                    )
+
+        if not market_description:
             print("⚠️ Aucun item détecté.")
         else:
+            if not has_my_listings:
+                my_listings_description = "✅ Tu as tout vendu !"
+
             embed = {
                 "title": "📊 Résumé du Marché - Meilleurs prix & Suggestions",
-                "description": description.strip(),
+                "description": market_description.strip(),
+                "fields": [
+                    {
+                        "name": "🧾 Tes ventes en cours",
+                        "value": my_listings_description.strip(),
+                        "inline": False
+                    }
+                ],
                 "color": 0xFFA500 if has_paladium else 0x800080
             }
             send_or_edit_embed(embed)
