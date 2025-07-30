@@ -147,6 +147,9 @@ def build_dashboard():
     has_paladium = False
 
     for item_id, item_name in ITEMS.items():
+        if item_id == "food":
+            continue 
+
         listings = fetch_listings(item_id)
         if not listings:
             continue
@@ -208,7 +211,7 @@ def build_dashboard():
 
     my_annonces_value = (
         "\n━━━━━━━━━━━━━━━\n"
-        "\n📦 **Tes annonces en cours**\n\n" +
+        "\n📦 **Tes ventes en cours**\n\n" +
         "\n".join(annonces_lines)
     )
 
