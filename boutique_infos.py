@@ -1,10 +1,11 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import json
 import os
 from dotenv import load_dotenv
 from collections import defaultdict
+import threading
 
 load_dotenv()
 
@@ -21,11 +22,13 @@ ITEMS = {
 
 API_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 UUID_ME = "820c5f51-4d1a-4d63-ba6c-1126cc96ae58"
-
+MONEY_DIR = r"F:\paladium_farmer\argent"
 LOWEST_FILE = "lowest_prices.json"
 MESSAGE_FILE = "last_message.json"
 LAST_ANNOUNCES_FILE = "my_last_announces.json"
 FOOD_ALERT_FILE = "food_alert_message.json"
+DAILY_SUMMARY_FILE = "daily_summary_message.json"
+
 
 # ---- Utils --------------------------------------------------------------
 
@@ -80,6 +83,13 @@ def delete_food_alert_message():
             save_json(FOOD_ALERT_FILE, {})
         else:
             print(f"❌ Échec suppression alerte nourriture : {resp.status_code} - {resp.text}")
+
+def get_daily_summary_message_id():
+    data = load_json(DAILY_SUMMARY_FILE, {})
+    return data.get("message_id")
+
+def save_daily_summary_message_id(mid: str):
+    save_json(DAILY_SUMMARY_FILE, {"message_id": mid})
 
 # ---- API ---------------------------------------------------------------
 
@@ -247,7 +257,7 @@ def build_dashboard():
 
 def monitor_food_alert():
     listings = fetch_listings("food")
-    cheap_food = [item for item in listings if item["price"] <= 4]
+    cheap_food = [item for item in listings if item["price"] <= 5]
 
     if cheap_food:
         cheapest = min(cheap_food, key=lambda x: x["price"])
@@ -290,13 +300,114 @@ def monitor_food_alert():
         delete_food_alert_message()
         print("❌ Plus d’alerte nourriture (aucune en dessous de 5⛃).")
 
+# ---- Récap argent ---------------------------------------------
+def fetch_balance():
+    try:
+        url = f"https://api.paladium.games/v1/paladium/player/profile/{UUID_ME}"
+        r = requests.get(url, headers=API_HEADERS, timeout=6)
+        r.raise_for_status()
+        data = r.json()
+        return data.get("money", 0)
+    except Exception as e:
+        print(f"❌ Erreur récupération balance : {e}")
+        return None
+
+def save_balance_for_today(amount):
+    os.makedirs(MONEY_DIR, exist_ok=True)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    path = os.path.join(MONEY_DIR, f"{today}.json")
+    with open(path, "w") as f:
+        json.dump({"money": amount}, f)
+
+def load_balance_for_date(date_str):
+    path = os.path.join(MONEY_DIR, f"{date_str}.json")
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            data = json.load(f)
+            return data.get("money", 0)
+    return 0
+
+def send_daily_summary_embed(gain):
+    today = datetime.utcnow().strftime("%d/%m/%Y")
+    emoji = "📈" if gain >= 0 else "📉"
+    commentaire = "positif" if gain >= 0 else "négatif"
+
+    embed = {
+        "title": f"📊 Résumé du {today}",
+        "description": f"{emoji} **{gain:,} ⛃** — Journée en {commentaire} !",
+        "color": 0x00FF00 if gain >= 0 else 0xFF0000,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    payload = {"embeds": [embed]}
+    msg_id = get_daily_summary_message_id()
+
+    if msg_id:
+        url = f"https://discord.com/api/webhooks/{WEBHOOK_ID}/{WEBHOOK_TOKEN}/messages/{msg_id}"
+        resp = requests.patch(url, json=payload, headers={"Content-Type": "application/json"})
+        if resp.status_code in (200, 204):
+            print("🔁 Résumé quotidien mis à jour.")
+            return
+        else:
+            print(f"⚠️ Échec de la mise à jour du résumé ({resp.status_code}): {resp.text}. Envoi d'un nouveau message.")
+
+    resp = requests.post(WEBHOOK_URL + "?wait=true", json=payload, headers={"Content-Type": "application/json"})
+    if resp.status_code in (200, 204):
+        try:
+            data = resp.json()
+            mid = data.get("id")
+            if mid:
+                save_daily_summary_message_id(mid)
+                print("📤 Résumé quotidien envoyé (nouveau message).")
+            else:
+                print("⚠️ Réponse sans ID message (mais envoyé).")
+        except Exception as e:
+            print(f"⚠️ Impossible de parser la réponse du webhook : {e}")
+    else:
+        print(f"❌ Échec de l'envoi du résumé quotidien : {resp.status_code} - {resp.text}")
+
+def daily_financial_check():
+    now = datetime.utcnow()
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    current_money = fetch_balance()
+    if current_money is None:
+        return
+
+    save_balance_for_today(current_money)
+    previous_money = load_balance_for_date(yesterday_str)
+    gain = current_money - previous_money
+
+    send_daily_summary_embed(gain)
+    print(f"✅ Résumé envoyé : {'+' if gain >= 0 else ''}{gain}⛃")
+
+def start_daily_scheduler():
+    last_run_date = None
+    def scheduler():
+        nonlocal last_run_date
+        while True:
+            now = datetime.utcnow()
+            today_str = now.strftime("%Y-%m-%d")
+            if now.hour == 21 and now.minute == 59:
+                if last_run_date != today_str:
+                    daily_financial_check()
+                    last_run_date = today_str
+                    time.sleep(60)
+                else:
+                    print("[Scheduler] Tâche déjà lancée aujourd'hui.")
+            time.sleep(10)
+    threading.Thread(target=scheduler, daemon=True).start()
+
 def monitor_market():
+    start_daily_scheduler()
     print("🚀 Dashboard marché lancé…")
     while True:
         embed = build_dashboard()
         send_or_edit_embed(embed)
         monitor_food_alert()
         time.sleep(30)
+
 
 if __name__ == "__main__":
     monitor_market()
