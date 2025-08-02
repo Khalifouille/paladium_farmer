@@ -231,7 +231,12 @@ def build_dashboard():
     if total_gains > 0:
         my_annonces_value += f"\n💸 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
 
-    my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + food_alert_line + summary_line
+        my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + food_alert_line
+
+        now_hour = now.hour
+        now_minute = now.minute
+        if (now_hour > 21) or (now_hour == 21 and now_minute >= 30):
+            my_annonces_value += "\n" + summary_line
 
     description = (
         "🔎 **Statistiques pour les ventes**\n\n" +
