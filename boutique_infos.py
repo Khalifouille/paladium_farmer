@@ -148,15 +148,25 @@ def build_dashboard():
 
     emoji = "📈" if gain >= 0 else "📉"
     commentaire = "positif" if gain >= 0 else "négatif"
-    summary_line = f"\n━━━━━━━━━━━━━━━\n📊 Résumé du {now.strftime('%d/%m/%Y')}\n\n{emoji} {gain:+,} ⛃ — Journée en {commentaire} !"
+    summary_line = f"\n━━━━━━━━━━━━━━━\n\n{emoji} {gain:+,} ⛃ — Journée en {commentaire} !"
 
     market_lines = []
     my_lines = []
     has_paladium = False
 
+    food_alert_line = ""
+    food_listings = fetch_listings("food")
+    cheap_food = [item for item in food_listings if item["price"] <= 4]
+    if cheap_food:
+        cheapest = min(cheap_food, key=lambda x: x["price"])
+        price = cheapest["price"]
+        food_alert_line = f"⚠️ **Des croquettes sont à {format_price(price)} ⛃ actuellement !**\n"
+    else:
+        food_alert_line = "❌ **Aucune croquette n'est à bas prix.**\n"
+
     for item_id, item_name in ITEMS.items():
         if item_id == "food":
-            continue 
+            continue  #
 
         listings = fetch_listings(item_id)
         if not listings:
@@ -216,16 +226,16 @@ def build_dashboard():
     )
 
     if total_potential_gains > 0:
-        my_annonces_value += f"\n\n💰 Tu pourrais gagner **{format_price(total_potential_gains)} ⛃** si tout se vend."
+        my_annonces_value += f"\n\n💰 Tu pourrais gagner **{format_price(total_potential_gains)} ⛃** si tout se vend.\n\n"
 
     if total_gains > 0:
         my_annonces_value += f"\n💸 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
 
-    my_annonces_value += summary_line
+    my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + food_alert_line + summary_line
 
     description = (
         "🔎 **Statistiques pour les ventes**\n\n" +
-        "\n━━━━━━━━━━━━━━━\n\n".join(market_lines)
+        "\n━━━━━━━━━━━━━━━\n\n".join(market_lines) 
     )
 
     embed = {
@@ -334,7 +344,7 @@ def monitor_market():
         embed = build_dashboard()
         if embed:
             send_or_edit_embed(embed)
-        monitor_food_alert()
+        #monitor_food_alert()
         time.sleep(30)
 
 if __name__ == "__main__":
