@@ -166,7 +166,7 @@ def build_dashboard():
 
     for item_id, item_name in ITEMS.items():
         if item_id == "food":
-            continue  #
+            continue  
 
         listings = fetch_listings(item_id)
         if not listings:
@@ -226,19 +226,20 @@ def build_dashboard():
     )
 
     if total_potential_gains > 0:
-        my_annonces_value += f"\n\n💰 Tu pourrais gagner **{format_price(total_potential_gains)} ⛃** si tout se vend.\n\n"
+        my_annonces_value += f"\n\n💰 Tu pourrais gagner **{format_price(total_potential_gains)} ⛃** si tout se vend.\n"
 
     if total_gains > 0:
         my_annonces_value += f"\n💸 Tu as gagné **{format_price(total_gains)} ⛃** grâce à tes ventes récentes."
 
-    my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + food_alert_line.strip()
+    my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + food_alert_line.strip() + "\n"
 
     now_hour = now.hour
     now_minute = now.minute
     if (now_hour > 21) or (now_hour == 21 and now_minute >= 30):
-        my_annonces_value += "\n\n" + summary_line.strip()
+        my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + summary_line.strip()
     else:
-        my_annonces_value += "\n\n🕒 **Le résumé de la journée sera disponible à 21h30.**"
+        my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n🕒 **Le résumé de la journée sera disponible à 21h30.**"
+
 
 
     description = (
