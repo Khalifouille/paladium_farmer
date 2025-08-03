@@ -236,7 +236,7 @@ def build_dashboard():
     now_hour = now.hour
     now_minute = now.minute
     if (now_hour > 21) or (now_hour == 21 and now_minute >= 30):
-        my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n" + summary_line.strip()
+        my_annonces_value += summary_line.strip()
     else:
         my_annonces_value += "\n━━━━━━━━━━━━━━━\n\n🕒 **Le résumé de la journée sera disponible à 21h30.**"
 
