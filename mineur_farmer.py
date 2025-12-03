@@ -5,10 +5,10 @@ import time
 import random
 import os
 
-X_COBBLESTONE = 789  
-Y_COBBLESTONE = 929   
-X_BOUTON_VENDRE = 1727  
-Y_BOUTON_VENDRE = 937  
+X_COBBLESTONE = 789  
+Y_COBBLESTONE = 929   
+X_BOUTON_VENDRE = 1727  
+Y_BOUTON_VENDRE = 937  
 
 stop_script = False
 
@@ -39,9 +39,15 @@ def vendre_cobblestone():
     pyautogui.click()
     time.sleep(0.5)
 
+    print("➡️ Vente de tout le stock de Cobblestone (Ctrl + Clic)...")
+    
+    pyautogui.keyDown('ctrl')
+    
     pyautogui.moveTo(X_BOUTON_VENDRE, Y_BOUTON_VENDRE, duration=0.2)
-    pyautogui.click()
+    pyautogui.click() 
     time.sleep(1) 
+    
+    pyautogui.keyUp('ctrl')
 
     pyautogui.press('esc')
     time.sleep(1)
