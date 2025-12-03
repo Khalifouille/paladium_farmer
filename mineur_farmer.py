@@ -3,7 +3,12 @@ import keyboard
 import threading
 import time
 import random
-import os 
+import os
+
+X_COBBLESTONE = 789  
+Y_COBBLESTONE = 929   
+X_BOUTON_VENDRE = 1727  
+Y_BOUTON_VENDRE = 937  
 
 stop_script = False
 
@@ -16,6 +21,34 @@ def stop_listener():
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
     os._exit(0) 
+
+def vendre_cobblestone():
+    print("💰 Préparation de la vente de Cobblestone...")
+    
+    pyautogui.mouseUp(button='left')
+    pyautogui.keyUp('w')
+    time.sleep(1) 
+
+    pyautogui.press('t')
+    time.sleep(0.5)
+    pyautogui.write('/shop', interval=0.1)
+    pyautogui.press('enter')
+    time.sleep(2) 
+
+    pyautogui.moveTo(X_COBBLESTONE, Y_COBBLESTONE, duration=0.2)
+    pyautogui.click()
+    time.sleep(0.5)
+
+    pyautogui.moveTo(X_BOUTON_VENDRE, Y_BOUTON_VENDRE, duration=0.2)
+    pyautogui.click()
+    time.sleep(1) 
+
+    pyautogui.press('esc')
+    time.sleep(1)
+    
+    pyautogui.mouseDown(button='left')
+    pyautogui.keyDown('w')
+    print("⛏️ Vente terminée. Reprise du minage.")
 
 threading.Thread(target=stop_listener, daemon=True).start()
 
@@ -35,10 +68,17 @@ pyautogui.keyDown('w')
 last_action_time = time.time()
 last_reset_time = time.time()
 last_direction_change = time.time()
+last_sell_time = time.time() 
 
 try:
     while not stop_script:
         now = time.time()
+
+        if now - last_sell_time > 600: 
+            vendre_cobblestone()
+            last_sell_time = now 
+            last_reset_time = now 
+            last_direction_change = now 
 
         if now - last_reset_time > 60:
             print("🔄 Réajustement souris à la position initiale.")
@@ -69,7 +109,6 @@ try:
 
         if now - last_action_time > random.uniform(6, 12):
             action = random.choice(['move_mouse', 'jump', 'strafe'])
-            print(f"⚙️ Action anti-AFK: {action}")
 
             if action == 'move_mouse':
                 dx = random.randint(-15, 15)
