@@ -3,6 +3,7 @@ import keyboard
 import threading
 import time
 import random
+import os 
 
 stop_script = False
 
@@ -10,7 +11,11 @@ def stop_listener():
     global stop_script
     keyboard.wait('esc')
     stop_script = True
-    print("\n🛑 Script stoppé par touche ESC.")
+    print("\n🛑 Script stoppé par touche ESC. Arrêt immédiat.")
+    
+    pyautogui.mouseUp(button='left')
+    pyautogui.keyUp('w')
+    os._exit(0) 
 
 threading.Thread(target=stop_listener, daemon=True).start()
 
@@ -64,6 +69,7 @@ try:
 
         if now - last_action_time > random.uniform(6, 12):
             action = random.choice(['move_mouse', 'jump', 'strafe'])
+            print(f"⚙️ Action anti-AFK: {action}")
 
             if action == 'move_mouse':
                 dx = random.randint(-15, 15)
