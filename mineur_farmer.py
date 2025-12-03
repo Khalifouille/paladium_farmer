@@ -16,14 +16,14 @@ def stop_listener():
     global stop_script
     keyboard.wait('esc')
     stop_script = True
-    print("\n🛑 Script stoppé par touche ESC. Arrêt immédiat.")
+    print("\n[INFO] Déconnexion immédiate demandée (touche Échap). Arrêt du script.")
     
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
     os._exit(0) 
 
 def vendre_cobblestone():
-    print("💰 Préparation de la vente de Cobblestone...")
+    print("[VENTE] Petite pause commerce ! Vente automatique lancée...")
     
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
@@ -39,7 +39,7 @@ def vendre_cobblestone():
     pyautogui.click()
     time.sleep(0.5)
 
-    print("➡️ Vente de tout le stock de Cobblestone (Ctrl + Clic)...")
+    print("[VENTE] Vente de toutes les cobblestones (Ctrl + Clic)...")
     
     pyautogui.keyDown('ctrl')
     
@@ -54,17 +54,18 @@ def vendre_cobblestone():
     
     pyautogui.mouseDown(button='left')
     pyautogui.keyDown('w')
-    print("⛏️ Vente terminée. Reprise du minage.")
+    print("[MINE] Inventaire vidé. Reprise du minage !")
 
 threading.Thread(target=stop_listener, daemon=True).start()
 
-print("⌛ Démarrage dans 5 secondes, place ta souris correctement (face à la stone)")
+print("--- FARMER LANCE ---")
+print("Préparation : 5 secondes pour te placer devant la pierre.")
 time.sleep(5)
 
 initial_mouse_pos = pyautogui.position()
-print(f"📍 Position initiale enregistrée : {initial_mouse_pos}")
+print(f"[INIT] Position de visée initiale enregistrée : {initial_mouse_pos}")
 
-print("⛏️ Minage + anti-AFK lancé. Appuie sur Échap pour arrêter.")
+print("Minage et anti-AFK activés. Bonne chance ! (ESC pour stopper)")
 
 direction_right = True
 
@@ -87,12 +88,12 @@ try:
             last_direction_change = now 
 
         if now - last_reset_time > 60:
-            print("🔄 Réajustement souris à la position initiale.")
+            print("[VISÉE] Recentrage sur la position initiale...")
             pyautogui.moveTo(initial_mouse_pos.x, initial_mouse_pos.y, duration=0.2)
             last_reset_time = now
 
         if now - last_direction_change > 60:
-            print("🔁 Changement de direction.")
+            print("[AFK] Changement de direction pour ne pas être kick...")
 
             pyautogui.mouseUp(button='left')
             pyautogui.keyUp('w')
@@ -100,10 +101,10 @@ try:
 
             angle = 250  
             if direction_right:
-                print("➡️ Tourne à droite")
+                print("-> Tourne à droite")
                 pyautogui.moveRel(angle, 0, duration=0.2)
             else:
-                print("⬅️ Tourne à gauche")
+                print("<- Tourne à gauche")
                 pyautogui.moveRel(-angle, 0, duration=0.2)
 
             pyautogui.mouseDown(button='left')
@@ -139,4 +140,4 @@ try:
 finally:
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
-    print("👋 Script arrêté proprement.")
+    print("--- SCRIPT ARRÊTÉ ---")
