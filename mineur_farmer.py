@@ -5,7 +5,7 @@ import time
 import random
 import os
 
-X_COBBLESTONE = 789 
+X_COBBLESTONE = 789
 Y_COBBLESTONE = 929 
 X_BOUTON_VENDRE = 1727
 Y_BOUTON_VENDRE = 937
@@ -122,9 +122,8 @@ try:
                 pyautogui.moveRel(-angle, 0, duration=0.2)
 
             pyautogui.mouseDown(button='left')
-            pyautogui.keyDown('w')
-            
             time.sleep(1.5) 
+            pyautogui.keyDown('w')
 
             direction_right = not direction_right
             last_direction_change = now
