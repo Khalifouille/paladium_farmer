@@ -5,10 +5,10 @@ import time
 import random
 import os
 
-X_COBBLESTONE = 789 
+X_COBBLESTONE = 789
 Y_COBBLESTONE = 929 
 X_BOUTON_VENDRE = 1727
-Y_BOUTON_VENDRE = 937
+Y_BOUTON_VENDRE = 937 
 
 stop_script = False
 
@@ -58,11 +58,6 @@ def vendre_cobblestone():
     pyautogui.press('esc')
     time.sleep(1)
     
-    ##F12 SUR MINECRAFT OU CA MARCHERA PAS ICI 
-    #global initial_mouse_pos
-    #pyautogui.moveTo(initial_mouse_pos.x, initial_mouse_pos.y, duration=0.2)
-    #print("[VISÉE] Recentrage forcé après la fermeture du shop.")
-    
     pyautogui.mouseDown(button='left')
     pyautogui.keyDown('w')
     print("[MINE] Inventaire vidé. Reprise du minage !")
@@ -108,6 +103,11 @@ try:
 
             pyautogui.mouseUp(button='left')
             pyautogui.keyUp('w')
+            
+            pyautogui.keyUp('a')
+            pyautogui.keyUp('d')
+            pyautogui.keyUp('s')
+            time.sleep(0.1) 
             
             clean_strafe_keys()
             
