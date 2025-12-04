@@ -5,12 +5,16 @@ import time
 import random
 import os
 
-X_COBBLESTONE = 789
-Y_COBBLESTONE = 929
+X_COBBLESTONE = 789 
+Y_COBBLESTONE = 929 
 X_BOUTON_VENDRE = 1727
 Y_BOUTON_VENDRE = 937 
 
 stop_script = False
+
+def clean_strafe_keys():
+    pyautogui.keyUp('a')
+    pyautogui.keyUp('d')
 
 def stop_listener():
     global stop_script
@@ -20,6 +24,7 @@ def stop_listener():
     
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
+    clean_strafe_keys()
     os._exit(0) 
 
 def vendre_cobblestone():
@@ -27,6 +32,7 @@ def vendre_cobblestone():
     
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
+    clean_strafe_keys()
     time.sleep(1) 
 
     pyautogui.press('t')
@@ -97,6 +103,9 @@ try:
 
             pyautogui.mouseUp(button='left')
             pyautogui.keyUp('w')
+            
+            clean_strafe_keys()
+            
             time.sleep(0.5)
 
             angle = 250  
@@ -140,4 +149,5 @@ try:
 finally:
     pyautogui.mouseUp(button='left')
     pyautogui.keyUp('w')
+    clean_strafe_keys()
     print("--- SCRIPT ARRÊTÉ ---")
