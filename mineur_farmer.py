@@ -92,7 +92,7 @@ try:
     while not stop_script:
         now = time.time()
 
-        if now - last_sell_time > 50: 
+        if now - last_sell_time > 600: 
             vendre_cobblestone()
             last_sell_time = now 
             last_reset_time = now 
