@@ -55,11 +55,12 @@ def vendre_cobblestone():
 threading.Thread(target=stop_listener, daemon=True).start()
 
 print("--- FARMER LANCE ---")
-print("Préparation : 5 secondes pour te placer devant la pierre.")
+print("Préparation : 5 secondes pour te placer devant la pierre. Regarde bien TOUT DROIT.")
 time.sleep(5)
 
 print("[INIT] Position enregistrée. Minage et anti-AFK activés. (ESC pour stopper)")
 direction_right = True
+current_angle = 0  # 0 = tout droit. On va traquer l'angle de la caméra ici.
 
 pyautogui.mouseDown(button='left')
 pyautogui.keyDown('w')
@@ -76,50 +77,51 @@ try:
         if now - last_sell_time > 600:
             vendre_cobblestone()
             last_sell_time = now
-            last_direction_change = now
+            # On ne reset pas last_direction_change ici pour garder le cycle de minage
 
-        # --- BLOC ANTI-AFK CORRIGÉ ---
+        # --- BLOC ANTI-AFK (ALTERNANCE DROITE / GAUCHE) ---
         if now - last_direction_change > 60:
-            print("[AFK] Changement de direction pour ne pas être kick...")
-
             pyautogui.mouseUp(button='left')
             pyautogui.keyUp('w')
             clean_strafe_keys()
             time.sleep(0.1)
 
-            angle = 250  
+            # Calcul de l'angle visé (ex: 250 = Droite, -250 = Gauche)
+            target_angle = 250 if direction_right else -250
+            
+            # De combien de pixels on doit bouger la souris pour atteindre cet angle ?
+            # Si on est à 250 et qu'on veut aller à -250, il faut faire -500 !
+            movement_needed = target_angle - current_angle 
+
             if direction_right:
-                print("-> Tourne à droite")
-                pyautogui.moveRel(angle, 0, duration=0.2)
-                time.sleep(0.5)
-                print("[VISÉE] Recentrage...")
-                pyautogui.moveRel(-angle, 0, duration=0.2) # Annulation exacte
+                print(f"[AFK] Rotation vers la DROITE (Mouvement souris: {movement_needed})")
             else:
-                print("<- Tourne à gauche")
-                pyautogui.moveRel(-angle, 0, duration=0.2)
-                time.sleep(0.5)
-                print("[VISÉE] Recentrage...")
-                pyautogui.moveRel(angle, 0, duration=0.2) # Annulation exacte
+                print(f"[AFK] Rotation vers la GAUCHE (Mouvement souris: {movement_needed})")
+
+            pyautogui.moveRel(movement_needed, 0, duration=0.5)
+            
+            # Mise à jour de l'angle actuel et préparation du prochain tour
+            current_angle = target_angle
+            direction_right = not direction_right
 
             time.sleep(0.2)
             pyautogui.mouseDown(button='left')
             time.sleep(1.5)
             pyautogui.keyDown('w')
 
-            direction_right = not direction_right
             last_direction_change = now
 
-        # --- BLOC MACRO ACTIONS ALEATOIRES CORRIGÉ ---
+        # --- BLOC MACRO ACTIONS ALEATOIRES SECURISÉ ---
         if now - last_action_time > random.uniform(6, 12):
             action = random.choice(['move_mouse', 'jump', 'strafe'])
 
             if action == 'move_mouse':
-                # Si on bouge la souris pour simuler une action humaine, il faut la remettre au centre
+                # Jitter de la souris, mais on annule le mouvement juste après pour ne pas dévier
                 dx = random.randint(-15, 15)
                 duration = random.uniform(0.05, 0.1)
                 pyautogui.moveRel(dx, 0, duration)
                 time.sleep(0.1)
-                pyautogui.moveRel(-dx, 0, duration) # Retour à la position d'origine
+                pyautogui.moveRel(-dx, 0, duration) 
 
             elif action == 'jump':
                 pyautogui.keyDown('space')
@@ -127,20 +129,20 @@ try:
                 pyautogui.keyUp('space')
 
             elif action == 'strafe':
-                # Si on strafe, il faut obligatoirement revenir sur ses pas pour rester face au bloc
+                # Strafe aller-retour obligatoire pour ne pas s'enfoncer dans le mur
                 strafe_duration = random.uniform(0.2, 0.4)
                 if random.choice([True, False]):
                     pyautogui.keyDown('a')
                     time.sleep(strafe_duration)
                     pyautogui.keyUp('a')
-                    pyautogui.keyDown('d') # Retour à droite
+                    pyautogui.keyDown('d') # On revient
                     time.sleep(strafe_duration)
                     pyautogui.keyUp('d')
                 else:
                     pyautogui.keyDown('d')
                     time.sleep(strafe_duration)
                     pyautogui.keyUp('d')
-                    pyautogui.keyDown('a') # Retour à gauche
+                    pyautogui.keyDown('a') # On revient
                     time.sleep(strafe_duration)
                     pyautogui.keyUp('a')
 
