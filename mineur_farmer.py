@@ -89,7 +89,6 @@ try:
             pyautogui.moveTo(initial_mouse_pos.x, initial_mouse_pos.y, duration=0.2)
             last_reset_time = now
 
-        # --- BLOC ANTI-AFK CORRIGÉ ---
         if now - last_direction_change > 60:
             print("[AFK] Changement de direction pour ne pas être kick...")
 
@@ -107,16 +106,21 @@ try:
             if direction_right:
                 print("-> Tourne à droite")
                 pyautogui.moveRel(angle, 0, duration=0.2)
+                time.sleep(0.5)
+                
+                # --- RECENTRAGE FONCTIONNEL POUR MINECRAFT ---
+                print("[VISÉE] Recentrage forcé (Contre-rotation gauche)...")
+                pyautogui.moveRel(-angle, 0, duration=0.2)
             else:
                 print("<- Tourne à gauche")
                 pyautogui.moveRel(-angle, 0, duration=0.2)
+                time.sleep(0.5)
+                
+                # --- RECENTRAGE FONCTIONNEL POUR MINECRAFT ---
+                print("[VISÉE] Recentrage forcé (Contre-rotation droite)...")
+                pyautogui.moveRel(angle, 0, duration=0.2)
 
-            # --- AJOUT DU RECENTRAGE FONCTIONNEL ---
             time.sleep(0.5)
-            print("[VISÉE] Recentrage forcé après mouvement AFK...")
-            pyautogui.moveTo(initial_mouse_pos.x, initial_mouse_pos.y, duration=0.2)
-            time.sleep(0.2)
-            # ----------------------------------------
 
             pyautogui.mouseDown(button='left')
             time.sleep(1.5)
@@ -124,7 +128,7 @@ try:
 
             direction_right = not direction_right
             last_direction_change = now
-            last_reset_time = now  
+            last_reset_time = now 
 
         # --- BLOC MACRO ACTIONS ALEATOIRES ---
         if now - last_action_time > random.uniform(6, 12):
