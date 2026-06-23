@@ -14,7 +14,6 @@ VK_S = 0x53
 VK_D = 0x44
 VK_T = 0x54
 VK_ESC = 0x1B
-VK_SPACE = 0x20
 VK_CONTROL = 0x11
 VK_RETURN = 0x0D
 
@@ -212,25 +211,31 @@ try:
             last_direction_change = now
             last_reset_time = now  
 
-        # --- BLOC MACRO ACTIONS ALEATOIRES ---
+        # --- BLOC MACRO ACTIONS ALEATOIRES SANS SAUT ---
         if now - last_action_time > random.uniform(6, 12):
-            action = random.choice(['move_mouse', 'jump', 'strafe'])
+            action = random.choice(['move_mouse', 'strafe'])
             
             if action == 'move_mouse':
                 dx = random.randint(-15, 15)
                 cumulated_dx += dx 
                 rotate_view(dx)
 
-            elif action == 'jump':
-                send_key_down(VK_SPACE)
-                time.sleep(random.uniform(0.1, 0.3))
-                send_key_up(VK_SPACE)
-
             elif action == 'strafe':
-                key_code = random.choice([VK_A, VK_D])
-                send_key_down(key_code)
-                time.sleep(random.uniform(0.2, 0.4))
-                send_key_up(key_code)
+                strafe_duration = random.uniform(0.2, 0.4)
+                if random.choice([True, False]):
+                    send_key_down(VK_A)
+                    time.sleep(strafe_duration)
+                    send_key_up(VK_A)
+                    send_key_down(VK_D) # Retour à droite
+                    time.sleep(strafe_duration)
+                    send_key_up(VK_D)
+                else:
+                    send_key_down(VK_D)
+                    time.sleep(strafe_duration)
+                    send_key_up(VK_D)
+                    send_key_down(VK_A) # Retour à gauche
+                    time.sleep(strafe_duration)
+                    send_key_up(VK_A)
 
             last_action_time = now
 
