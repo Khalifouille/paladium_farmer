@@ -10,6 +10,7 @@ import keyboard
 
 VK_W = 0x57
 VK_A = 0x41
+VK_S = 0x53
 VK_D = 0x44
 VK_T = 0x54
 VK_ESC = 0x1B
@@ -31,6 +32,7 @@ cumulated_dx = 0  # Permet de suivre le décalage de la visée pour le corriger 
 WM_LBUTTONDOWN = 0x0201
 WM_LBUTTONUP = 0x0202
 WM_MOUSEMOVE = 0x0200
+WM_CHAR = 0x0102
 
 def find_minecraft_window():
     global minecraft_hwnd
@@ -68,15 +70,10 @@ def send_chat_command(command):
     send_key_up(VK_T)
     time.sleep(0.5)
     
+    # Utilisation de WM_CHAR pour envoyer fiablement les caractères spéciaux comme '/' en arrière-plan
     for char in command:
-        vk = ord(char.upper()) 
-        try:
-            win32api.keybd_event(vk, 0, 0, 0) 
-            time.sleep(0.02)
-            win32api.keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
-            time.sleep(0.02)
-        except:
-            pass
+        win32gui.SendMessage(minecraft_hwnd, WM_CHAR, ord(char), 0)
+        time.sleep(0.02)
 
     time.sleep(0.5)
     win32api.keybd_event(VK_RETURN, 0, 0, 0) 
@@ -111,7 +108,7 @@ def vendre_cobblestone():
     clean_strafe_keys()
     time.sleep(1) 
 
-    send_chat_command('shop')
+    send_chat_command('/shop')
     time.sleep(2) 
 
     print("[VENTE] Clics sur l'interface de vente...")
@@ -138,7 +135,7 @@ threading.Thread(target=stop_listener, daemon=True).start()
 if not find_minecraft_window():
     os._exit(1)
 
-print("--- FARMER LANCE (MODE NON-INTRUSIF V2) ---")
+print("--- FARMER LANCE (MODE NON-INTRUSIF V3) ---")
 print("Préparation : 5 secondes pour te placer devant la pierre.")
 print("La fenêtre de jeu peut être masquée par une autre, mais NE doit PAS être minimisée dans la barre des tâches.")
 time.sleep(5)
@@ -156,24 +153,32 @@ try:
     while not stop_script:
         now = time.time()
 
+        # --- BLOC VENTE ---
         if now - last_sell_time > 600:
             vendre_cobblestone()
             last_sell_time = now 
             last_reset_time = now
             last_direction_change = now 
 
+        # --- BLOC RECENTRAGE PÉRIODIQUE ---
         if now - last_reset_time > 60:
             if cumulated_dx != 0:
-                print(f"[VISÉE] Recentrage de la visée (Correction de {-cumulated_dx}px en arrière-plan)...")
+                print(f"[VISÉE] Recentrage périodique de la visée (Correction de {-cumulated_dx}px en arrière-plan)...")
                 rotate_view(-cumulated_dx)
                 cumulated_dx = 0
             last_reset_time = now
 
+        # --- BLOC ANTI-AFK CORRIGÉ ---
         if now - last_direction_change > 60:
             print("[AFK] Changement de direction pour ne pas être kick...")
 
             send_mouse_up()
             send_key_up(VK_W)
+            send_key_up(VK_A)
+            send_key_up(VK_D)
+            send_key_up(VK_S)
+            time.sleep(0.1) 
+            
             clean_strafe_keys()
             time.sleep(0.5) 
             
@@ -185,6 +190,20 @@ try:
                 print("<- Tourne à gauche")
                 rotate_view(-angle)
 
+            # --- AJOUT DU RECENTRAGE FONCTIONNEL ---
+            time.sleep(0.5)
+            print("[VISÉE] Recentrage forcé après mouvement AFK...")
+            if direction_right:
+                rotate_view(-angle)
+            else:
+                rotate_view(angle)
+                
+            if cumulated_dx != 0:
+                rotate_view(-cumulated_dx)
+                cumulated_dx = 0
+            time.sleep(0.2)
+            # ----------------------------------------
+
             send_mouse_down()
             time.sleep(1.5) 
             send_key_down(VK_W)
@@ -193,6 +212,7 @@ try:
             last_direction_change = now
             last_reset_time = now  
 
+        # --- BLOC MACRO ACTIONS ALEATOIRES ---
         if now - last_action_time > random.uniform(6, 12):
             action = random.choice(['move_mouse', 'jump', 'strafe'])
             
