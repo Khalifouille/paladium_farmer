@@ -15,16 +15,54 @@ try:
 except ImportError:
     HAS_KEYBOARD = False
 
+try:
+    import win32gui, win32con
+    HAS_WIN32 = True
+except ImportError:
+    HAS_WIN32 = False
+    print("[INFO] pywin32 non installé — pip install pywin32")
+
+# ── Fenêtre Minecraft — taille et position exactes depuis ta photo ──
+MC_WIN_X      = 110
+MC_WIN_Y      = 64
+MC_WIN_WIDTH  = 1617
+MC_WIN_HEIGHT = 967
+
+def setup_minecraft_window():
+    if not HAS_WIN32:
+        print("[WARN] pywin32 non disponible — taille non forcée")
+        return False
+    windows = []
+    def callback(h, _):
+        title = win32gui.GetWindowText(h)
+        if title: windows.append((h, title))
+    win32gui.EnumWindows(callback, None)
+    for h, title in windows:
+        if any(k in title for k in ["Minecraft", "Paladium", "Java"]):
+            print(f"[WINDOW] Trouvé : '{title}'")
+            win32gui.ShowWindow(h, win32con.SW_RESTORE)
+            time.sleep(0.2)
+            win32gui.SetWindowPos(h, win32con.HWND_TOP,
+                                  MC_WIN_X, MC_WIN_Y,
+                                  MC_WIN_WIDTH, MC_WIN_HEIGHT, 0)
+            win32gui.SetForegroundWindow(h)
+            time.sleep(0.3)
+            print(f"[WINDOW] {MC_WIN_WIDTH}x{MC_WIN_HEIGHT} — premier plan OK")
+            return True
+    print("[WARN] Fenêtre Minecraft introuvable")
+    return False
+
 # ── Template ──
 TEMPLATE_PATH = "template_peche.png"
 if not os.path.exists(TEMPLATE_PATH):
     print(f"ERREUR : '{TEMPLATE_PATH}' introuvable"); sys.exit(1)
 
 template = cv2.imread(TEMPLATE_PATH, cv2.IMREAD_GRAYSCALE)
-TEMPLATE_SCORE_MIN = 0.85
+TEMPLATE_SCORE_MIN = 0.6
 
-# ── Région barre ──
-BAR_REGION = {"left": 442, "top": 576, "width": 721, "height": 24}
+# ── Régions ──
+BAR_REGION      = {"left": 460, "top": 590, "width": 900, "height": 24}
+TEMPLATE_REGION = {"left": 0,   "top": 0,   "width": 1920, "height": 1080}
 
 # ── Couleurs BGR ──
 C_WHITE_LO  = np.array([240, 240, 240], dtype=np.uint8)
@@ -38,13 +76,13 @@ C_PURPLE_HI = np.array([255,  55, 200], dtype=np.uint8)
 C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
 C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
-WHITE_MIN        = 10
-ANTI_AFK_EVERY   = 60   # secondes entre chaque mouvement anti-AFK
-BAR_TIMEOUT      = 12   # secondes max pour attendre que le curseur arrive sur une zone
+WHITE_MIN      = 10
+ANTI_AFK_EVERY = 120  # toutes les 2 min (kick Paladium ~10min)
+CAST_TIMEOUT   = 60   # secondes max pour attendre le mini-jeu après un lancé
 
-running   = True
-stats     = {"casts": 0, "hits": 0, "misses": 0}
-last_afk  = time.time()
+running  = True
+stats    = {"casts": 0, "hits": 0, "misses": 0}
+last_afk = time.time()
 
 def stop():
     global running; running = False; print("\n[STOP]")
@@ -60,7 +98,8 @@ def grab_bar(sct):
     return cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2BGR)
 
 def is_menu_visible(sct):
-    shot = sct.grab(sct.monitors[1])
+    """Cherche le template uniquement dans la zone du panneau."""
+    shot = sct.grab(TEMPLATE_REGION)
     gray = cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2GRAY)
     result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
     return result.max()
@@ -84,26 +123,61 @@ def zone_at(bar_img, x, tol=6):
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "gray"
 
+def get_mc_hwnd():
+    """Retourne le handle de la fenêtre Minecraft."""
+    if not HAS_WIN32:
+        return None
+    result = []
+    def cb(h, _):
+        t = win32gui.GetWindowText(h)
+        if any(k in t for k in ["Minecraft", "Paladium", "Java"]):
+            result.append(h)
+    win32gui.EnumWindows(cb, None)
+    return result[0] if result else None
+
+def send_key(vk, duration=0.1):
+    """Envoie une touche directement à Minecraft via PostMessage."""
+    if not HAS_WIN32:
+        return
+    import win32api
+    h = get_mc_hwnd()
+    if not h:
+        return
+    win32api.PostMessage(h, 0x0100, vk, 0)
+    time.sleep(duration)
+    win32api.PostMessage(h, 0x0101, vk, 0)
+
 def anti_afk():
-    """Actions aléatoires pour éviter le kick AFK — uniquement hors mini-jeu."""
+    """Actions anti-AFK envoyées directement a Minecraft via win32."""
     global last_afk
     if time.time() - last_afk < ANTI_AFK_EVERY:
         return
 
+    VK = {"space": 0x20, "shift": 0x10, "w": 0x57, "a": 0x41, "d": 0x44}
+
     actions = random.sample([
-        ("souris_droite",   lambda: (pyautogui.moveRel( random.randint(3,8), 0, duration=0.15), time.sleep(0.1), pyautogui.moveRel(-random.randint(3,8), 0, duration=0.15))),
-        ("souris_gauche",   lambda: (pyautogui.moveRel(-random.randint(3,8), 0, duration=0.15), time.sleep(0.1), pyautogui.moveRel( random.randint(3,8), 0, duration=0.15))),
-        ("saut",            lambda: (pyautogui.keyDown("space"), time.sleep(random.uniform(0.05, 0.1)), pyautogui.keyUp("space"))),
-        ("accroupi",        lambda: (pyautogui.keyDown("shift"), time.sleep(random.uniform(0.1, 0.2)), pyautogui.keyUp("shift"))),
-        ("avance_leger",    lambda: (pyautogui.keyDown("w"),     time.sleep(random.uniform(0.05, 0.12)), pyautogui.keyUp("w"))),
-    ], k=random.randint(1, 3))  # 1 à 3 actions par cycle
+        ("saut",    lambda: send_key(VK["space"], random.uniform(0.05, 0.1))),
+        ("accroupi",lambda: send_key(VK["shift"], random.uniform(0.1,  0.2))),
+        ("avance",  lambda: send_key(VK["w"],     random.uniform(0.05, 0.1))),
+        ("gauche",  lambda: send_key(VK["a"],     random.uniform(0.05, 0.1))),
+        ("droite",  lambda: send_key(VK["d"],     random.uniform(0.05, 0.1))),
+    ], k=random.randint(1, 3))
 
     for name, action in actions:
         action()
         print(f"\n[AFK] {name}")
-        time.sleep(random.uniform(0.2, 0.5))
+        time.sleep(random.uniform(0.2, 0.4))
 
     last_afk = time.time()
+
+def recast():
+    """Reprend l'hameçon et relance."""
+    print("\n[RECAST] Timeout — reprise + nouveau lancé")
+    pyautogui.click(button="right")   # reprend l'hameçon
+    time.sleep(random.uniform(0.6, 1.0))
+    pyautogui.click(button="right")   # nouveau lancé
+    stats["casts"] += 1
+    print(f"[LANCÉ] #{stats['casts']} | Hits:{stats['hits']} Misses:{stats['misses']}")
 
 def cast():
     pyautogui.click(button="right")
@@ -118,65 +192,70 @@ def main():
     global running
     print("=" * 50)
     print(f"  Template: {template.shape} | Seuil: {TEMPLATE_SCORE_MIN}")
-    print("  Démarrage dans 3s — passe sur Minecraft !")
+    print("  Démarrage dans 3s...")
     if HAS_KEYBOARD:
         print("  F8 pour arrêter | coin haut-gauche = urgence")
     print("=" * 50)
+    # Force la taille et met Minecraft au premier plan
+    setup_minecraft_window()
     time.sleep(3)
     pyautogui.FAILSAFE = True
 
     with mss.mss() as sct:
         cast()
-        time.sleep(random.uniform(1.5, 3.5))
+        cast_time = time.time()
 
         while running:
-            anti_afk()
+            anti_afk()  # uniquement ici = hors mini-jeu
             score = is_menu_visible(sct)
-            print(f"  [WAIT] score={score:.3f}    ", end="\r")
+            elapsed_cast = time.time() - cast_time
+            print(f"  [WAIT] score={score:.3f} t={elapsed_cast:.0f}s    ", end="\r")
+
+            # Timeout : hameçon à l'eau depuis trop longtemps sans mini-jeu
+            if elapsed_cast > CAST_TIMEOUT:
+                recast()
+                cast_time = time.time()
+                time.sleep(random.uniform(1.5, 3.5))
+                continue
 
             if score < TEMPLATE_SCORE_MIN:
                 time.sleep(0.1)
                 continue
 
             print(f"\n[MENU] Détecté ! score={score:.3f}")
-            pressed    = False
-            bar_start  = time.time()
+            pressed = False
 
+            # Attend indéfiniment que le curseur atteigne une zone cible
+            # Pas de timeout, pas de miss — on appuie dès que c'est bon
             while running:
-                # Timeout — si le curseur n'atteint pas de zone après BAR_TIMEOUT secondes
-                if time.time() - bar_start > BAR_TIMEOUT:
-                    print("\n  [TIMEOUT] Curseur n'a pas atteint de zone cible")
-                    break
-
                 bar_img = grab_bar(sct)
                 w = count(bar_img, C_WHITE_LO, C_WHITE_HI)
 
-                # Menu fermé = curseur disparu
+                # Curseur disparu = menu fermé naturellement
                 if w < WHITE_MIN:
+                    if not pressed:
+                        stats["misses"] += 1
+                        print("\n  [MISS] Menu fermé sans zone cible")
                     break
 
                 cx = cursor_x(bar_img)
                 z  = zone_at(bar_img, cx)
-                elapsed = time.time() - bar_start
-                print(f"  x={cx} zone={z} blanc={w} t={elapsed:.1f}s    ", end="\r")
+                print(f"  x={cx} zone={z}    ", end="\r")
 
                 if z in ("red", "purple", "orange") and not pressed:
                     pressed = True
                     stats["hits"] += 1
-                    print(f"\n  [APPUI] zone={z} x={cx} t={elapsed:.1f}s")
+                    print(f"\n  [APPUI] zone={z} x={cx}")
                     press_space()
                     time.sleep(0.3)
                     break
 
                 time.sleep(0.008)
 
-            if not pressed:
-                stats["misses"] += 1
-                print("\n  [MISS]")
-
             time.sleep(random.uniform(0.8, 1.5))
             if running:
                 cast()
+                cast_time = time.time()
                 time.sleep(random.uniform(1.5, 3.5))
 
     print(f"\n[FIN] Lancés:{stats['casts']} Hits:{stats['hits']} Misses:{stats['misses']}")
