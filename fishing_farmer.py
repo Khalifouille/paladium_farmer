@@ -77,12 +77,10 @@ C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
 C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
 WHITE_MIN      = 10
-ANTI_AFK_EVERY = 120  # toutes les 2 min (kick Paladium ~10min)
 CAST_TIMEOUT   = 60   # secondes max pour attendre le mini-jeu après un lancé
 
 running  = True
 stats    = {"casts": 0, "hits": 0, "misses": 0}
-last_afk = time.time()
 
 def stop():
     global running; running = False; print("\n[STOP]")
@@ -123,53 +121,6 @@ def zone_at(bar_img, x, tol=6):
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "gray"
 
-def get_mc_hwnd():
-    """Retourne le handle de la fenêtre Minecraft."""
-    if not HAS_WIN32:
-        return None
-    result = []
-    def cb(h, _):
-        t = win32gui.GetWindowText(h)
-        if any(k in t for k in ["Minecraft", "Paladium", "Java"]):
-            result.append(h)
-    win32gui.EnumWindows(cb, None)
-    return result[0] if result else None
-
-def send_key(vk, duration=0.1):
-    """Envoie une touche directement à Minecraft via PostMessage."""
-    if not HAS_WIN32:
-        return
-    import win32api
-    h = get_mc_hwnd()
-    if not h:
-        return
-    win32api.PostMessage(h, 0x0100, vk, 0)
-    time.sleep(duration)
-    win32api.PostMessage(h, 0x0101, vk, 0)
-
-def anti_afk():
-    """Actions anti-AFK envoyées directement a Minecraft via win32."""
-    global last_afk
-    if time.time() - last_afk < ANTI_AFK_EVERY:
-        return
-
-    VK = {"space": 0x20, "shift": 0x10, "w": 0x57, "a": 0x41, "d": 0x44}
-
-    actions = random.sample([
-        ("saut",    lambda: send_key(VK["space"], random.uniform(0.05, 0.1))),
-        ("accroupi",lambda: send_key(VK["shift"], random.uniform(0.1,  0.2))),
-        ("avance",  lambda: send_key(VK["w"],     random.uniform(0.05, 0.1))),
-        ("gauche",  lambda: send_key(VK["a"],     random.uniform(0.05, 0.1))),
-        ("droite",  lambda: send_key(VK["d"],     random.uniform(0.05, 0.1))),
-    ], k=random.randint(1, 3))
-
-    for name, action in actions:
-        action()
-        print(f"\n[AFK] {name}")
-        time.sleep(random.uniform(0.2, 0.4))
-
-    last_afk = time.time()
-
 def recast():
     """Reprend l'hameçon et relance."""
     print("\n[RECAST] Timeout — reprise + nouveau lancé")
@@ -185,7 +136,6 @@ def cast():
     print(f"[LANCÉ] #{stats['casts']} | Hits:{stats['hits']} Misses:{stats['misses']}")
 
 def press_space():
-    time.sleep(random.uniform(0.04, 0.09))
     pyautogui.press("space")
 
 def main():
@@ -206,7 +156,6 @@ def main():
         cast_time = time.time()
 
         while running:
-            anti_afk()  # uniquement ici = hors mini-jeu
             score = is_menu_visible(sct)
             elapsed_cast = time.time() - cast_time
             print(f"  [WAIT] score={score:.3f} t={elapsed_cast:.0f}s    ", end="\r")
