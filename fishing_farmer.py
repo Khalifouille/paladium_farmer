@@ -1,241 +1,187 @@
 """
-=============================================================
-  AUTO-PÊCHE PALADIUM  —  1920x1080 fullscreen
-=============================================================
-  INSTALLATION :
-      pip install mss pyautogui opencv-python numpy keyboard
-
-  UTILISATION :
-      1. Minecraft en 1920x1080 fullscreen, canne en main
-      2. python peche_paladium.py
-      3. Passe sur Minecraft avant les 3 secondes
-      4. F8 pour stopper | souris coin haut-gauche = arrêt urgence
-=============================================================
+AUTO-PÊCHE PALADIUM
+pip install mss pyautogui opencv-python numpy keyboard pillow
+Mettre template_peche.png dans le même dossier
 """
 
-import time
-import random
-import sys
-
+import time, random, sys, os
 try:
-    import mss
-    import numpy as np
-    import pyautogui
-    import cv2
+    import mss, numpy as np, pyautogui, cv2
 except ImportError:
-    print("Modules manquants. Lance :")
-    print("  pip install mss pyautogui opencv-python numpy keyboard")
-    sys.exit(1)
+    print("pip install mss pyautogui opencv-python numpy keyboard"); sys.exit(1)
 
 try:
-    import keyboard
-    HAS_KEYBOARD = True
+    import keyboard; HAS_KEYBOARD = True
 except ImportError:
     HAS_KEYBOARD = False
-    print("[INFO] 'keyboard' non installé — arrêt via Ctrl+C uniquement")
 
-# ─────────────────────────────────────────────
-#   COORDONNÉES — calibrées depuis debug_barre.png
-# ─────────────────────────────────────────────
+# ── Template ──
+TEMPLATE_PATH = "template_peche.png"
+if not os.path.exists(TEMPLATE_PATH):
+    print(f"ERREUR : '{TEMPLATE_PATH}' introuvable"); sys.exit(1)
 
-BAR_REGION = {
-    "left":   250,
-    "top":    598,
-    "width": 1300,
-    "height":  42,
-}
+template = cv2.imread(TEMPLATE_PATH, cv2.IMREAD_GRAYSCALE)
+TEMPLATE_SCORE_MIN = 0.85
 
-# ─────────────────────────────────────────────
-#   COULEURS (BGR pour OpenCV)
-#   Extraites pixel par pixel depuis le vrai screenshot
-# ─────────────────────────────────────────────
+# ── Région barre ──
+BAR_REGION = {"left": 442, "top": 576, "width": 721, "height": 24}
 
-# Blanc — curseur (255,255,255)
-COLOR_WHITE_LOW  = np.array([230, 230, 230], dtype=np.uint8)
-COLOR_WHITE_HIGH = np.array([255, 255, 255], dtype=np.uint8)
+# ── Couleurs BGR ──
+C_WHITE_LO  = np.array([240, 240, 240], dtype=np.uint8)
+C_WHITE_HI  = np.array([255, 255, 255], dtype=np.uint8)
+C_GREEN_LO  = np.array([ 30, 190,  70], dtype=np.uint8)
+C_GREEN_HI  = np.array([ 60, 225, 110], dtype=np.uint8)
+C_RED_LO    = np.array([ 45,  40, 235], dtype=np.uint8)
+C_RED_HI    = np.array([ 70,  70, 255], dtype=np.uint8)
+C_PURPLE_LO = np.array([220,  25, 155], dtype=np.uint8)
+C_PURPLE_HI = np.array([255,  55, 200], dtype=np.uint8)
+C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
+C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
-# Vert X1 — à ÉVITER (94,212,42) RGB → (42,212,94) BGR
-COLOR_GREEN_LOW  = np.array([ 20, 170,  60], dtype=np.uint8)
-COLOR_GREEN_HIGH = np.array([ 80, 255, 130], dtype=np.uint8)
+WHITE_MIN        = 10
+ANTI_AFK_EVERY   = 60   # secondes entre chaque mouvement anti-AFK
+BAR_TIMEOUT      = 12   # secondes max pour attendre que le curseur arrive sur une zone
 
-# Rouge X2 — objectif (255,57,57) RGB → (57,57,255) BGR
-COLOR_RED_LOW  = np.array([ 30,  20, 200], dtype=np.uint8)
-COLOR_RED_HIGH = np.array([ 90,  90, 255], dtype=np.uint8)
+running   = True
+stats     = {"casts": 0, "hits": 0, "misses": 0}
+last_afk  = time.time()
 
-# Violet X5 (boosté)
-COLOR_PURPLE_LOW  = np.array([120,   0,  80], dtype=np.uint8)
-COLOR_PURPLE_HIGH = np.array([255,  80, 200], dtype=np.uint8)
-
-# Orange LVL-UP
-COLOR_ORANGE_LOW  = np.array([  0, 120, 180], dtype=np.uint8)
-COLOR_ORANGE_HIGH = np.array([ 60, 210, 255], dtype=np.uint8)
-
-# Fond gris de la barre (50,50,50) — pour détecter menu fermé
-COLOR_BGGRAY_LOW  = np.array([ 35,  35,  35], dtype=np.uint8)
-COLOR_BGGRAY_HIGH = np.array([ 70,  70,  70], dtype=np.uint8)
-
-# Seuil pixels blancs pour confirmer curseur présent
-WHITE_PIXEL_THRESHOLD = 15
-
-# ─────────────────────────────────────────────
-#   DÉLAIS
-# ─────────────────────────────────────────────
-DELAY_AFTER_CAST = (1.5, 3.5)
-POLL_INTERVAL    = 0.008
-REACTION_DELAY   = (0.04, 0.09)
-RECAST_DELAY     = (0.8, 1.5)
-
-# ─────────────────────────────────────────────
-#   ÉTAT GLOBAL
-# ─────────────────────────────────────────────
-running = True
-stats = {"casts": 0, "hits": 0, "misses": 0}
-
-def stop_script():
-    global running
-    running = False
-    print("\n[STOP] Script arrêté.")
+def stop():
+    global running; running = False; print("\n[STOP]")
 
 if HAS_KEYBOARD:
-    keyboard.add_hotkey("F8", stop_script)
+    keyboard.add_hotkey("F8", stop)
 
-# ─────────────────────────────────────────────
-#   FONCTIONS
-# ─────────────────────────────────────────────
+def count(img, lo, hi):
+    return np.count_nonzero(cv2.inRange(img, lo, hi))
 
-def capture_bar(sct):
+def grab_bar(sct):
     shot = sct.grab(BAR_REGION)
-    img = np.array(shot)
-    return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+    return cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2BGR)
 
-def is_menu_visible(bar_img):
-    """
-    Détecte le menu en cherchant :
-    1. Le fond gris de la barre (50,50,50) — confirme que la barre est là
-    2. Des pixels blancs — confirme que le curseur est présent
-    """
-    # Vérifie fond gris barre
-    mask_gray = cv2.inRange(bar_img, COLOR_BGGRAY_LOW, COLOR_BGGRAY_HIGH)
-    if np.count_nonzero(mask_gray) < 100:
-        return False
-    # Vérifie curseur blanc
-    mask_white = cv2.inRange(bar_img, COLOR_WHITE_LOW, COLOR_WHITE_HIGH)
-    return np.count_nonzero(mask_white) >= WHITE_PIXEL_THRESHOLD
+def is_menu_visible(sct):
+    shot = sct.grab(sct.monitors[1])
+    gray = cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2GRAY)
+    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+    return result.max()
 
-def find_white_cursor(bar_img):
-    """Position X centrale du curseur blanc."""
-    mask = cv2.inRange(bar_img, COLOR_WHITE_LOW, COLOR_WHITE_HIGH)
-    cols = np.where(mask.any(axis=0))[0]
-    if len(cols) == 0:
-        return None
-    return int(cols.mean())
+def cursor_x(bar_img):
+    cols = np.where(cv2.inRange(bar_img, C_WHITE_LO, C_WHITE_HI).any(axis=0))[0]
+    return int(cols.mean()) if len(cols) else None
 
-def get_zone_at(bar_img, x, tol=8):
-    """Zone colorée sous le curseur à position x."""
-    if x is None:
-        return None
-    h = bar_img.shape[0]
-    mid_y = h // 2
-    xs = [max(0, min(bar_img.shape[1] - 1, x + dx)) for dx in range(-tol, tol + 1)]
-    pixels = bar_img[mid_y, xs]
-
-    scores = {"red": 0, "purple": 0, "orange": 0, "green": 0}
-    for px in pixels:
-        p = px.reshape(1, 1, 3)
-        if cv2.inRange(p, COLOR_RED_LOW,    COLOR_RED_HIGH).any():    scores["red"]    += 1
-        if cv2.inRange(p, COLOR_PURPLE_LOW, COLOR_PURPLE_HIGH).any(): scores["purple"] += 1
-        if cv2.inRange(p, COLOR_ORANGE_LOW, COLOR_ORANGE_HIGH).any(): scores["orange"] += 1
-        if cv2.inRange(p, COLOR_GREEN_LOW,  COLOR_GREEN_HIGH).any():  scores["green"]  += 1
-
+def zone_at(bar_img, x, tol=6):
+    if x is None: return None
+    mid = bar_img.shape[0] // 2
+    xs = [max(0, min(bar_img.shape[1]-1, x+d)) for d in range(-tol, tol+1)]
+    pxs = bar_img[mid, xs]
+    scores = {k: 0 for k in ["red","purple","orange","green"]}
+    for px in pxs:
+        p = px.reshape(1,1,3)
+        if cv2.inRange(p, C_RED_LO,    C_RED_HI).any():    scores["red"]    += 1
+        if cv2.inRange(p, C_PURPLE_LO, C_PURPLE_HI).any(): scores["purple"] += 1
+        if cv2.inRange(p, C_ORANGE_LO, C_ORANGE_HI).any(): scores["orange"] += 1
+        if cv2.inRange(p, C_GREEN_LO,  C_GREEN_HI).any():  scores["green"]  += 1
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "gray"
 
-def should_press(zone):
-    return zone in ("red", "purple", "orange")
+def anti_afk():
+    """Actions aléatoires pour éviter le kick AFK — uniquement hors mini-jeu."""
+    global last_afk
+    if time.time() - last_afk < ANTI_AFK_EVERY:
+        return
 
-def human_delay(r):
-    time.sleep(random.uniform(*r))
+    actions = random.sample([
+        ("souris_droite",   lambda: (pyautogui.moveRel( random.randint(3,8), 0, duration=0.15), time.sleep(0.1), pyautogui.moveRel(-random.randint(3,8), 0, duration=0.15))),
+        ("souris_gauche",   lambda: (pyautogui.moveRel(-random.randint(3,8), 0, duration=0.15), time.sleep(0.1), pyautogui.moveRel( random.randint(3,8), 0, duration=0.15))),
+        ("saut",            lambda: (pyautogui.keyDown("space"), time.sleep(random.uniform(0.05, 0.1)), pyautogui.keyUp("space"))),
+        ("accroupi",        lambda: (pyautogui.keyDown("shift"), time.sleep(random.uniform(0.1, 0.2)), pyautogui.keyUp("shift"))),
+        ("avance_leger",    lambda: (pyautogui.keyDown("w"),     time.sleep(random.uniform(0.05, 0.12)), pyautogui.keyUp("w"))),
+    ], k=random.randint(1, 3))  # 1 à 3 actions par cycle
 
-def cast_rod():
+    for name, action in actions:
+        action()
+        print(f"\n[AFK] {name}")
+        time.sleep(random.uniform(0.2, 0.5))
+
+    last_afk = time.time()
+
+def cast():
     pyautogui.click(button="right")
     stats["casts"] += 1
-    print(f"[LANCÉ] #{stats['casts']} | Hits: {stats['hits']} | Misses: {stats['misses']}")
+    print(f"[LANCÉ] #{stats['casts']} | Hits:{stats['hits']} Misses:{stats['misses']}")
 
 def press_space():
-    human_delay(REACTION_DELAY)
+    time.sleep(random.uniform(0.04, 0.09))
     pyautogui.press("space")
-
-# ─────────────────────────────────────────────
-#   BOUCLE PRINCIPALE
-# ─────────────────────────────────────────────
 
 def main():
     global running
-
-    print("=" * 60)
-    print("  AUTO-PÊCHE PALADIUM — démarrage dans 3 secondes")
-    print("  Passe sur Minecraft !")
+    print("=" * 50)
+    print(f"  Template: {template.shape} | Seuil: {TEMPLATE_SCORE_MIN}")
+    print("  Démarrage dans 3s — passe sur Minecraft !")
     if HAS_KEYBOARD:
-        print("  F8 pour arrêter | souris coin haut-gauche = urgence")
-    else:
-        print("  Ctrl+C pour arrêter | souris coin haut-gauche = urgence")
-    print("=" * 60)
+        print("  F8 pour arrêter | coin haut-gauche = urgence")
+    print("=" * 50)
     time.sleep(3)
-
     pyautogui.FAILSAFE = True
 
     with mss.mss() as sct:
-        cast_rod()
-        human_delay(DELAY_AFTER_CAST)
+        cast()
+        time.sleep(random.uniform(1.5, 3.5))
 
         while running:
-            bar_img = capture_bar(sct)
+            anti_afk()
+            score = is_menu_visible(sct)
+            print(f"  [WAIT] score={score:.3f}    ", end="\r")
 
-            if not is_menu_visible(bar_img):
-                time.sleep(0.05)
+            if score < TEMPLATE_SCORE_MIN:
+                time.sleep(0.1)
                 continue
 
-            print("[MENU] Détecté — scan en cours...")
-            pressed_this_round = False
+            print(f"\n[MENU] Détecté ! score={score:.3f}")
+            pressed    = False
+            bar_start  = time.time()
 
             while running:
-                bar_img = capture_bar(sct)
-                mask_white = cv2.inRange(bar_img, COLOR_WHITE_LOW, COLOR_WHITE_HIGH)
-
-                # Menu fermé si curseur disparu
-                if np.count_nonzero(mask_white) < WHITE_PIXEL_THRESHOLD:
+                # Timeout — si le curseur n'atteint pas de zone après BAR_TIMEOUT secondes
+                if time.time() - bar_start > BAR_TIMEOUT:
+                    print("\n  [TIMEOUT] Curseur n'a pas atteint de zone cible")
                     break
 
-                cursor_x = find_white_cursor(bar_img)
-                zone = get_zone_at(bar_img, cursor_x)
+                bar_img = grab_bar(sct)
+                w = count(bar_img, C_WHITE_LO, C_WHITE_HI)
 
-                print(f"  cursor_x={cursor_x} zone={zone}    ", end="\r")
+                # Menu fermé = curseur disparu
+                if w < WHITE_MIN:
+                    break
 
-                if should_press(zone) and not pressed_this_round:
-                    pressed_this_round = True
+                cx = cursor_x(bar_img)
+                z  = zone_at(bar_img, cx)
+                elapsed = time.time() - bar_start
+                print(f"  x={cx} zone={z} blanc={w} t={elapsed:.1f}s    ", end="\r")
+
+                if z in ("red", "purple", "orange") and not pressed:
+                    pressed = True
                     stats["hits"] += 1
-                    print(f"\n  [APPUI] Zone={zone} | x={cursor_x}")
+                    print(f"\n  [APPUI] zone={z} x={cx} t={elapsed:.1f}s")
                     press_space()
                     time.sleep(0.3)
                     break
 
-                time.sleep(POLL_INTERVAL)
+                time.sleep(0.008)
 
-            if not pressed_this_round:
+            if not pressed:
                 stats["misses"] += 1
-                print(f"\n  [MISS] Curseur manqué ou zone verte/grise")
+                print("\n  [MISS]")
 
-            human_delay(RECAST_DELAY)
+            time.sleep(random.uniform(0.8, 1.5))
             if running:
-                cast_rod()
-                human_delay(DELAY_AFTER_CAST)
+                cast()
+                time.sleep(random.uniform(1.5, 3.5))
 
-    print("\n[FIN] Stats :")
-    print(f"  Lancés : {stats['casts']}")
-    print(f"  Hits   : {stats['hits']}")
-    print(f"  Misses : {stats['misses']}")
-    if stats["casts"] > 0:
-        print(f"  Taux   : {stats['hits'] / stats['casts'] * 100:.1f}%")
+    print(f"\n[FIN] Lancés:{stats['casts']} Hits:{stats['hits']} Misses:{stats['misses']}")
+    if stats["casts"]:
+        print(f"Taux: {stats['hits']/stats['casts']*100:.1f}%")
 
 if __name__ == "__main__":
     main()
