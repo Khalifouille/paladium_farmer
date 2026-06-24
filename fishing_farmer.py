@@ -81,9 +81,11 @@ CAST_TIMEOUT   = 60   # secondes max pour attendre le mini-jeu après un lancé
 
 running  = True
 stats    = {"casts": 0, "hits": 0, "misses": 0}
+current_slot = 1
+failed_casts = 0
 
 def stop():
-    global running; running = False; print("\n[STOP]")
+    global running, failed_casts; running = False; print("\n[STOP]")
 
 if HAS_KEYBOARD:
     keyboard.add_hotkey("F8", stop)
@@ -121,6 +123,20 @@ def zone_at(bar_img, x, tol=6):
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "gray"
 
+
+def next_rod():
+    global current_slot, running
+
+    if current_slot >= 9:
+        print("\n[STOP] Plus de cannes disponibles")
+        running = False
+        return
+
+    current_slot += 1
+    pyautogui.press(str(current_slot))
+    print(f"\n[CANNE] Passage au slot {current_slot}")
+    time.sleep(0.5)
+
 def recast():
     """Reprend l'hameçon et relance."""
     print("\n[RECAST] Timeout — reprise + nouveau lancé")
@@ -139,7 +155,7 @@ def press_space():
     pyautogui.press("space")
 
 def main():
-    global running
+    global running, failed_casts
     print("=" * 50)
     print(f"  Template: {template.shape} | Seuil: {TEMPLATE_SCORE_MIN}")
     print("  Démarrage dans 3s...")
@@ -162,15 +178,23 @@ def main():
 
             # Timeout : hameçon à l'eau depuis trop longtemps sans mini-jeu
             if elapsed_cast > CAST_TIMEOUT:
-                recast()
-                cast_time = time.time()
-                time.sleep(random.uniform(1.5, 3.5))
-                continue
+                failed_casts += 1
+                print(f"\n[TIMEOUT] #{failed_casts}")
+
+                if failed_casts >= 2:
+                    next_rod()
+                    failed_casts = 0
+
+                    cast()
+                    cast_time = time.time()
+                    time.sleep(random.uniform(1.5, 3.5))
+                    continue
 
             if score < TEMPLATE_SCORE_MIN:
                 time.sleep(0.1)
                 continue
 
+            failed_casts = 0
             print(f"\n[MENU] Détecté ! score={score:.3f}")
             pressed = False
 
