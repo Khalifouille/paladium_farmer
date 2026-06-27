@@ -1,3 +1,9 @@
+"""
+AUTO-PÊCHE PALADIUM
+pip install mss pyautogui opencv-python numpy keyboard pillow
+Mettre template_peche.png dans le même dossier
+"""
+
 import time, random, sys, os
 try:
     import mss, numpy as np, pyautogui, cv2
@@ -71,7 +77,7 @@ C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
 C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
 WHITE_MIN      = 10
-CAST_TIMEOUT   = 60   
+CAST_TIMEOUT   = 60   # secondes max pour attendre le mini-jeu après un lancé
 
 running  = True
 stats    = {"casts": 0, "hits": 0, "misses": 0}
@@ -92,6 +98,7 @@ def grab_bar(sct):
     return cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2BGR)
 
 def is_menu_visible(sct):
+    """Cherche le template uniquement dans la zone du panneau."""
     shot = sct.grab(TEMPLATE_REGION)
     gray = cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2GRAY)
     result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
@@ -117,6 +124,7 @@ def zone_at(bar_img, x, tol=6):
     return best if scores[best] > 0 else "gray"
 
 def scan_bar_colors(bar_img):
+    """Scanne toute la barre et retourne les couleurs présentes."""
     present = set()
     mid = bar_img.shape[0] // 2
     for x in range(bar_img.shape[1]):
@@ -127,17 +135,58 @@ def scan_bar_colors(bar_img):
     return present
 
 def get_target_zone(present_colors):
+    """Retourne la zone prioritaire selon les couleurs présentes dans la barre.
+    - violet présent  → priorité violet  (X5)
+    - orange présent  → priorité orange  (LVL-UP)
+    - sinon           → rouge            (X2)
+    """
     if "purple" in present_colors: return "purple"
     if "orange" in present_colors: return "orange"
     return "red"
 
 
+# ── Inventaire — coordonnées des cases ──
+INV_START_X = 784   # première case haut-gauche
+INV_START_Y = 598
+INV_CELL_W  = 25    # taille d'une case
+INV_CELL_H  = 25
+INV_COLS    = 9
+INV_ROWS    = 3
+
+def refill_rods_from_inventory():
+    """
+    Ouvre l'inventaire, shift+clique toutes les cases (3x9)
+    pour envoyer les cannes dans la barre du bas, puis ferme.
+    """
+    print("\n[INVENTAIRE] Rechargement des cannes...")
+    pyautogui.press("e")
+    time.sleep(0.6)
+
+    for row in range(INV_ROWS):
+        for col in range(INV_COLS):
+            x = INV_START_X + col * INV_CELL_W
+            y = INV_START_Y + row * INV_CELL_H
+            pyautogui.keyDown("shift")
+            pyautogui.click(x, y)
+            pyautogui.keyUp("shift")
+            time.sleep(0.08)  # petit délai entre chaque clic
+
+    time.sleep(0.3)
+    pyautogui.press("e")  # ferme l'inventaire
+    time.sleep(0.5)
+    print("[INVENTAIRE] Rechargement terminé")
+
 def next_rod():
     global current_slot, running
 
     if current_slot >= 9:
-        print("\n[STOP] Plus de cannes disponibles")
-        running = False
+        # Plus de cannes dans la barre — recharge depuis l'inventaire
+        print("\n[CANNE] Slots épuisés — rechargement inventaire")
+        refill_rods_from_inventory()
+        current_slot = 1
+        pyautogui.press("1")
+        time.sleep(0.3)
+        print(f"[CANNE] Retour au slot 1")
         return
 
     current_slot += 1
@@ -184,15 +233,18 @@ def main():
             elapsed_cast = time.time() - cast_time
             print(f"  [WAIT] score={score:.3f} t={elapsed_cast:.0f}s    ", end="\r")
 
+            # Timeout : hameçon à l'eau depuis trop longtemps sans mini-jeu
             if elapsed_cast > CAST_TIMEOUT:
                 failed_casts += 1
                 print(f"\n[TIMEOUT] #{failed_casts}")
 
                 if failed_casts >= 2:
+                    # 2 timeouts consécutifs → change de canne et relance
                     next_rod()
                     failed_casts = 0
                     cast()
                 else:
+                    # 1er timeout → reprend et relance simplement
                     recast()
 
                 cast_time = time.time()
