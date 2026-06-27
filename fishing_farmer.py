@@ -71,7 +71,7 @@ C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
 C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
 WHITE_MIN      = 10
-CAST_TIMEOUT   = 60  
+CAST_TIMEOUT   = 60   
 
 running  = True
 stats    = {"casts": 0, "hits": 0, "misses": 0}
@@ -184,17 +184,15 @@ def main():
             elapsed_cast = time.time() - cast_time
             print(f"  [WAIT] score={score:.3f} t={elapsed_cast:.0f}s    ", end="\r")
 
-            # Timeout : hameçon à l'eau depuis trop longtemps sans mini-jeu
             if elapsed_cast > CAST_TIMEOUT:
                 failed_casts += 1
                 print(f"\n[TIMEOUT] #{failed_casts}")
 
                 if failed_casts >= 2:
-                    # 2 timeouts consécutifs → change de canne
                     next_rod()
                     failed_casts = 0
+                    cast()
                 else:
-                    # 1er timeout → reprend et relance simplement
                     recast()
 
                 cast_time = time.time()
