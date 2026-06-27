@@ -1,9 +1,3 @@
-"""
-AUTO-PÊCHE PALADIUM
-pip install mss pyautogui opencv-python numpy keyboard pillow
-Mettre template_peche.png dans le même dossier
-"""
-
 import time, random, sys, os
 try:
     import mss, numpy as np, pyautogui, cv2
@@ -77,7 +71,7 @@ C_ORANGE_LO = np.array([  0, 120, 180], dtype=np.uint8)
 C_ORANGE_HI = np.array([ 60, 210, 255], dtype=np.uint8)
 
 WHITE_MIN      = 10
-CAST_TIMEOUT   = 60   # secondes max pour attendre le mini-jeu après un lancé
+CAST_TIMEOUT   = 60  
 
 running  = True
 stats    = {"casts": 0, "hits": 0, "misses": 0}
@@ -98,7 +92,6 @@ def grab_bar(sct):
     return cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2BGR)
 
 def is_menu_visible(sct):
-    """Cherche le template uniquement dans la zone du panneau."""
     shot = sct.grab(TEMPLATE_REGION)
     gray = cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2GRAY)
     result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
@@ -122,6 +115,21 @@ def zone_at(bar_img, x, tol=6):
         if cv2.inRange(p, C_GREEN_LO,  C_GREEN_HI).any():  scores["green"]  += 1
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "gray"
+
+def scan_bar_colors(bar_img):
+    present = set()
+    mid = bar_img.shape[0] // 2
+    for x in range(bar_img.shape[1]):
+        p = bar_img[mid, x].reshape(1,1,3)
+        if cv2.inRange(p, C_RED_LO,    C_RED_HI).any():    present.add("red")
+        if cv2.inRange(p, C_PURPLE_LO, C_PURPLE_HI).any(): present.add("purple")
+        if cv2.inRange(p, C_ORANGE_LO, C_ORANGE_HI).any(): present.add("orange")
+    return present
+
+def get_target_zone(present_colors):
+    if "purple" in present_colors: return "purple"
+    if "orange" in present_colors: return "orange"
+    return "red"
 
 
 def next_rod():
@@ -182,13 +190,16 @@ def main():
                 print(f"\n[TIMEOUT] #{failed_casts}")
 
                 if failed_casts >= 2:
+                    # 2 timeouts consécutifs → change de canne
                     next_rod()
                     failed_casts = 0
+                else:
+                    # 1er timeout → reprend et relance simplement
+                    recast()
 
-                    cast()
-                    cast_time = time.time()
-                    time.sleep(random.uniform(1.5, 3.5))
-                    continue
+                cast_time = time.time()
+                time.sleep(random.uniform(1.5, 3.5))
+                continue
 
             if score < TEMPLATE_SCORE_MIN:
                 time.sleep(0.1)
@@ -198,8 +209,13 @@ def main():
             print(f"\n[MENU] Détecté ! score={score:.3f}")
             pressed = False
 
-            # Attend indéfiniment que le curseur atteigne une zone cible
-            # Pas de timeout, pas de miss — on appuie dès que c'est bon
+            # Scan initial de la barre pour déterminer la zone prioritaire
+            bar_img      = grab_bar(sct)
+            present      = scan_bar_colors(bar_img)
+            target       = get_target_zone(present)
+            print(f"  [SCAN] couleurs={present} → cible={target}")
+
+            # Attend que le curseur arrive sur la zone cible
             while running:
                 bar_img = grab_bar(sct)
                 w = count(bar_img, C_WHITE_LO, C_WHITE_HI)
@@ -213,9 +229,9 @@ def main():
 
                 cx = cursor_x(bar_img)
                 z  = zone_at(bar_img, cx)
-                print(f"  x={cx} zone={z}    ", end="\r")
+                print(f"  x={cx} zone={z} cible={target}    ", end="\r")
 
-                if z in ("red", "purple", "orange") and not pressed:
+                if z == target and not pressed:
                     pressed = True
                     stats["hits"] += 1
                     print(f"\n  [APPUI] zone={z} x={cx}")
