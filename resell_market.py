@@ -1,13 +1,3 @@
-"""
-COMPARATEUR PRIX — Admin Shop vs Market Shop — Paladium
-=======================================================
-Installe : pip install requests
-
-Configure WEBHOOK_URL et lance : python price_alert.py
-Le script tourne en boucle et notifie Discord quand un item
-du market est moins cher que le prix admin shop.
-"""
-
 import requests
 import time
 import json
@@ -38,7 +28,6 @@ already_alerted = {}
 
 
 def get_admin_items():
-    """Récupère TOUS les items de l'admin shop via offset/limit."""
     all_items = {}
     offset = 0
     limit  = 100
@@ -86,7 +75,6 @@ def get_market_price(item_name):
         if not data.get("listing"):
             return None
 
-        # Prix minimum parmi tous les listings actifs
         prices = [l["price"] for l in data["listing"] if l.get("price", 0) > 0]
         if not prices:
             return None
