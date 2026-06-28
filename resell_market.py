@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import pyautogui
 import threading
+import pyperclip
 
 load_dotenv()
 
@@ -131,18 +132,28 @@ def buy_item_market(item_name, seller_uuid, expected_price):
     print(f"[AUTO-BUY] Vendeur : {seller_name}")
     
     try:
-        item_search = item_name.replace("-", " ")
-        search_query = f"{item_search} @p:{seller_name}"
-        full_command = f"/ah {search_query}"
-
-        # 1. Ouvre le chat et tape la commande exacte
+        # 1. Ouvre le chat
         pyautogui.press("t")
         time.sleep(0.5)
-        pyautogui.write(full_command, interval=0.02)
-        print(f"[AUTO-BUY] Commande tapée : {full_command}")
+        
+        # 2. Tape la commande /ah
+        pyautogui.write("/ah ", interval=0.02)
         time.sleep(0.3)
         
-        # 2. Envoie
+        # 3. Tape le nom de l'item + filtre vendeur via clipboard
+        item_search = item_name.replace("-", " ")
+        search_query = f"{item_search} @p:{seller_name}"
+        
+        # Copie dans le clipboard
+        pyperclip.copy(search_query)
+        time.sleep(0.1)
+        
+        # Colle avec Ctrl+V
+        pyautogui.hotkey("ctrl", "v")
+        print(f"[AUTO-BUY] Commande collée : /ah {search_query}")
+        time.sleep(0.3)
+        
+        # 4. Envoie
         pyautogui.press("enter")
         time.sleep(5)  # Attendre le chargement des résultats
         
