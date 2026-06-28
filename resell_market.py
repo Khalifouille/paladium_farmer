@@ -4,16 +4,26 @@ import json
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+import pyautogui
+import threading
 
 load_dotenv()
 
 # ── CONFIG ──────────────────────────────────────────────────
 TOKEN = os.getenv("TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-CHECK_INTERVAL   = 120       
+CHECK_INTERVAL   = 50       
 MIN_DISCOUNT_PCT = 5        
-MAX_MARKET_CALLS = 50 
+MAX_MARKET_CALLS = 45 
+AUTO_BUY_ENABLED = True  # Active l'achat automatique
 # ─────────────────────────────────────────────────────────────
+
+# ── POSITIONS MARKET (à calibrer) ──
+SEARCH_BAR_X, SEARCH_BAR_Y = 274, 402
+PRICE_ROW_X, PRICE_ROW_Y = 1406, 530
+BUY_BUTTON_X, BUY_BUTTON_Y = 919, 779
+CLOSE_MODAL_X, CLOSE_MODAL_Y = 1671, 124
+# ────────────────────────────────────
 
 BASE_URL    = "https://api.paladium.games/v1/paladium/shop"
 ADMIN_URL   = f"{BASE_URL}/admin/items"
@@ -24,7 +34,8 @@ HEADERS = {
     "Authorization": f"Bearer {TOKEN}"
 }
 
-already_alerted = {}   
+already_alerted = {}
+buy_queue = []  # Queue des items à acheter
 
 
 def get_admin_items():
@@ -64,7 +75,7 @@ def get_admin_items():
 
 
 def get_market_price(item_name):
-    """Récupère le prix minimum du marché pour un item."""
+    """Récupère le prix minimum + détails du vendeur."""
     try:
         r = requests.get(f"{MARKET_URL}/{item_name}", headers=HEADERS, timeout=10)
         if r.status_code == 404:
@@ -75,12 +86,22 @@ def get_market_price(item_name):
         if not data.get("listing"):
             return None
 
-        prices = [l["price"] for l in data["listing"] if l.get("price", 0) > 0]
-        if not prices:
+        # Trouver le listing avec le prix minimum
+        min_listing = None
+        min_price = float('inf')
+        
+        for listing in data["listing"]:
+            price = listing.get("price", 0)
+            if 0 < price < min_price:
+                min_price = price
+                min_listing = listing
+
+        if not min_listing:
             return None
 
         return {
-            "min_price":   min(prices),
+            "min_price":   min_listing["price"],
+            "seller":      min_listing.get("seller", "unknown"),  # UUID du vendeur
             "avg_price":   data.get("priceAverage", 0),
             "qty":         data.get("quantityAvailable", 0),
             "count":       data.get("countListings", 0),
@@ -90,24 +111,94 @@ def get_market_price(item_name):
         return None
 
 
+def get_player_name(uuid):
+    """Récupère le username du joueur via son UUID."""
+    try:
+        r = requests.get(f"https://api.paladium.games/v1/paladium/ranking/trixium/player/{uuid}", headers=HEADERS, timeout=5)
+        if r.status_code == 200:
+            return r.json().get("username", uuid[:8])
+        return uuid[:8]
+    except Exception as e:
+        print(f"[WARN] Impossible de récupérer le username pour {uuid[:8]} : {e}")
+        return uuid[:8]
+
+
+def buy_item_market(item_name, seller_uuid, expected_price):
+    """Automatise l'achat d'un item sur le market."""
+    print(f"\n[AUTO-BUY] Démarrage pour {item_name} chez {seller_uuid[:8]}...")
+    
+    seller_name = get_player_name(seller_uuid)
+    print(f"[AUTO-BUY] Vendeur : {seller_name}")
+    
+    try:
+        item_search = item_name.replace("-", " ")
+        search_query = f"{item_search} @p:{seller_name}"
+        full_command = f"/ah {search_query}"
+
+        # 1. Ouvre le chat et tape la commande exacte
+        pyautogui.press("t")
+        time.sleep(0.5)
+        pyautogui.write(full_command, interval=0.02)
+        print(f"[AUTO-BUY] Commande tapée : {full_command}")
+        time.sleep(0.3)
+        
+        # 2. Envoie
+        pyautogui.press("enter")
+        time.sleep(5)  # Attendre le chargement des résultats
+        
+        # 5. Clique sur le prix
+        print(f"[AUTO-BUY] Clic sur le prix...")
+        pyautogui.click(PRICE_ROW_X, PRICE_ROW_Y)
+        time.sleep(2)  # Attendre le modal
+        
+        # 5. Vérifie le prix (optionnel — tu peux ajouter une vérification OCR ici)
+        print(f"[AUTO-BUY] Modal ouvert — prix attendu: {expected_price}$")
+        time.sleep(1)
+        
+        # 6. Clique sur BUY
+        print(f"[AUTO-BUY] Clic sur BUY...")
+        pyautogui.click(BUY_BUTTON_X, BUY_BUTTON_Y)
+        time.sleep(2)
+        
+        print(f"[AUTO-BUY] ✅ Achat lancé pour {item_name}")
+        return True
+        
+    except Exception as e:
+        print(f"[AUTO-BUY] ❌ Erreur : {e}")
+        # Ferme le modal si erreur
+        try:
+            pyautogui.click(CLOSE_MODAL_X, CLOSE_MODAL_Y)
+        except:
+            pass
+        return False
+
+
 def send_discord_alert(alerts):
-    """Envoie une notification Discord avec tous les deals trouvés."""
+    """Envoie alerte Discord ET ajoute à la queue d'achat."""
     if not alerts:
         return
 
     lines = []
     for a in alerts:
+        seller = get_player_name(a["seller_uuid"])
         lines.append(
             f"**{a['name']}**\n"
-            f"  Prix market  : `{a['market_price']:.2f}` pièces (achat)\n"
-            f"  Prix admin   : `{a['sell_price']:.2f}` pièces (revente)\n"
-            f"  Profit/unité : `+{a['profit']:.2f}` pièces (`+{a['profit_pct']:.1f}%`) 💹\n"
-            f"  Dispo market : `{a['qty']}` unités ({a['count']} listings)\n"
-            f"  Profit max   : `+{a['profit'] * a['qty']:.2f}` pièces (tout racheter)\n"
+            f"  Prix market  : `{a['market_price']:.2f}` pièces\n"
+            f"  Prix admin   : `{a['sell_price']:.2f}` pièces\n"
+            f"  @p: **{seller}**\n"
         )
+        
+        # Ajoute à la queue d'achat
+        if AUTO_BUY_ENABLED:
+            buy_queue.append({
+                "item": a["name"],
+                "seller_uuid": a["seller_uuid"],
+                "price": a["market_price"],
+                "timestamp": time.time()
+            })
 
     embed = {
-        "title": f"💹 {len(alerts)} opportunité(s) d'arbitrage trouvée(s) !",
+        "title": f"💹 {len(alerts)} deal(s) trouvé(s) !",
         "description": "\n".join(lines),
         "color": 0x2ECC71,
         "footer": {"text": f"Paladium Price Bot • {datetime.now().strftime('%H:%M:%S')}"},
@@ -116,11 +207,24 @@ def send_discord_alert(alerts):
     try:
         r = requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
         if r.status_code == 204:
-            print(f"[DISCORD] ✅ Alerte envoyée ({len(alerts)} items)")
+            print(f"[DISCORD] ✅ {len(alerts)} alerte(s) envoyée(s)")
+            if AUTO_BUY_ENABLED:
+                print(f"[AUTO-BUY] 📋 {len(alerts)} item(s) ajouté(s) à la queue")
         else:
-            print(f"[DISCORD] ❌ Erreur {r.status_code} : {r.text}")
+            print(f"[DISCORD] ❌ Erreur {r.status_code}")
     except Exception as e:
-        print(f"[DISCORD] Erreur envoi : {e}")
+        print(f"[DISCORD] Erreur : {e}")
+
+
+def process_buy_queue():
+    """Traite les achats en queue."""
+    while True:
+        if buy_queue:
+            item = buy_queue.pop(0)
+            print(f"\n[QUEUE] Traitement de {item['item']}")
+            buy_item_market(item["item"], item["seller_uuid"], item["price"])
+            time.sleep(10)  # Délai entre les achats
+        time.sleep(1)
 
 
 def check_prices():
@@ -138,7 +242,7 @@ def check_prices():
 
     for name, admin in admin_items.items():
         if checked >= MAX_MARKET_CALLS:
-            print(f"  Limite de {MAX_MARKET_CALLS} appels market atteinte pour ce cycle.")
+            print(f"  Limite de {MAX_MARKET_CALLS} appels atteinte.")
             break
 
         market = get_market_price(name)
@@ -147,50 +251,47 @@ def check_prices():
         if market is None:
             continue
 
-        sell_price   = admin["sellPrice"]    
-        market_price = market["min_price"]    
+        sell_price   = admin["sellPrice"]
+        market_price = market["min_price"]
 
         profit       = sell_price - market_price
         profit_pct   = (profit / market_price) * 100 if market_price > 0 else 0
 
-        print(f"  {name}: sell_admin={sell_price:.2f} market={market_price:.2f} profit={profit:+.2f} ({profit_pct:+.1f}%)")
-
-        # Alerte si on peut acheter sur le market et revendre à l'admin avec un profit >= MIN_DISCOUNT_PCT%
         if profit > 0 and profit_pct >= MIN_DISCOUNT_PCT:
             prev = already_alerted.get(name)
             if prev is None or abs(prev - market_price) > 0.01:
                 alerts.append({
-                    "name":         name,
-                    "sell_price":   sell_price,
-                    "market_price": market_price,
-                    "profit":       profit,
-                    "profit_pct":   profit_pct,
-                    "qty":          market["qty"],
-                    "count":        market["count"],
+                    "name":          name,
+                    "sell_price":    sell_price,
+                    "market_price":  market_price,
+                    "profit":        profit,
+                    "seller_uuid":   market["seller"],
                 })
                 already_alerted[name] = market_price
         else:
             already_alerted.pop(name, None)
 
-        time.sleep(0.3)  
+        time.sleep(0.3)
 
     if alerts:
         send_discord_alert(alerts)
     else:
-        print("  Aucun deal trouvé ce cycle.")
+        print("  Aucun deal trouvé.")
 
 
 def main():
     print("=" * 55)
-    print("  PALADIUM PRICE BOT")
+    print("  PALADIUM PRICE BOT + AUTO-BUY")
     print(f"  Intervalle   : {CHECK_INTERVAL}s")
-    print(f"  Seuil alerte : -{MIN_DISCOUNT_PCT}% vs admin shop")
-    print(f"  Webhook      : {'OK' if WEBHOOK_URL != 'METS_TON_WEBHOOK_ICI' else '⚠️  NON CONFIGURÉ'}")
+    print(f"  Seuil alerte : {MIN_DISCOUNT_PCT}%")
+    print(f"  Auto-buy     : {'🟢 ACTIVÉ' if AUTO_BUY_ENABLED else '🔴 DÉSACTIVÉ'}")
     print("=" * 55)
 
-    if WEBHOOK_URL == "METS_TON_WEBHOOK_ICI":
-        print("\n⚠️  Configure WEBHOOK_URL en haut du script avant de lancer !")
-        return
+    if AUTO_BUY_ENABLED:
+        # Lance le thread de traitement des achats
+        buy_thread = threading.Thread(target=process_buy_queue, daemon=True)
+        buy_thread.start()
+        print("[AUTO-BUY] Thread démarré")
 
     while True:
         try:
@@ -199,7 +300,7 @@ def main():
             print("\n[STOP] Arrêt demandé.")
             break
         except Exception as e:
-            print(f"[ERREUR CRITIQUE] {e}")
+            print(f"[ERREUR] {e}")
 
         print(f"  Prochain check dans {CHECK_INTERVAL}s...")
         time.sleep(CHECK_INTERVAL)

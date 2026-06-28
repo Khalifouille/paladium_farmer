@@ -1,9 +1,3 @@
-"""
-AUTO-PÊCHE PALADIUM
-pip install mss pyautogui opencv-python numpy keyboard pillow
-Mettre template_peche.png dans le même dossier
-"""
-
 import time, random, sys, os
 try:
     import mss, numpy as np, pyautogui, cv2
@@ -11,8 +5,11 @@ except ImportError:
     print("pip install mss pyautogui opencv-python numpy keyboard"); sys.exit(1)
 
 try:
-    import keyboard; HAS_KEYBOARD = True
+    import importlib
+    keyboard = importlib.import_module("keyboard")
+    HAS_KEYBOARD = True
 except ImportError:
+    keyboard = None
     HAS_KEYBOARD = False
 
 try:
