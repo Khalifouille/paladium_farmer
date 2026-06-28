@@ -16,7 +16,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 CHECK_INTERVAL   = 50       
 MIN_DISCOUNT_PCT = 5        
 MAX_MARKET_CALLS = 45 
-AUTO_BUY_ENABLED = True  # Active l'achat automatique
+AUTO_BUY_ENABLED = True
 # ─────────────────────────────────────────────────────────────
 
 # ── POSITIONS MARKET (à calibrer) ──
@@ -36,7 +36,7 @@ HEADERS = {
 }
 
 already_alerted = {}
-buy_queue = []  # Queue des items à acheter
+buy_queue = []
 
 
 def get_admin_items():
@@ -102,7 +102,7 @@ def get_market_price(item_name):
 
         return {
             "min_price":   min_listing["price"],
-            "seller":      min_listing.get("seller", "unknown"),  # UUID du vendeur
+            "seller":      min_listing.get("seller", "unknown"),
             "avg_price":   data.get("priceAverage", 0),
             "qty":         data.get("quantityAvailable", 0),
             "count":       data.get("countListings", 0),
