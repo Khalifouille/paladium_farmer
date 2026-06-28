@@ -111,78 +111,100 @@ def get_market_price(item_name):
         print(f"[ERREUR] Market {item_name} : {e}")
         return None
 
+player_cache = {}
 
 def get_player_name(uuid):
-    """Récupère le username du joueur via son UUID."""
+    if uuid in player_cache:
+        return player_cache[uuid]
+
     try:
-        r = requests.get(f"https://api.paladium.games/v1/paladium/ranking/trixium/player/{uuid}", headers=HEADERS, timeout=5)
-        if r.status_code == 200:
-            return r.json().get("username", uuid[:8])
-        return uuid[:8]
+        r = requests.get(
+            "https://vrc.lol/api",
+            params={
+                "username": uuid,
+                "type": "all"
+            },
+            timeout=5
+        )
+        r.raise_for_status()
+
+        data = r.json()
+
+        username = None
+
+        if data.get("java"):
+            username = data["java"].get("username")
+
+        if not username and data.get("bedrock"):
+            username = data["bedrock"].get("username")
+
+        if not username:
+            username = uuid[:8]
+
+        player_cache[uuid] = username
+        return username
+
     except Exception as e:
         print(f"[WARN] Impossible de récupérer le username pour {uuid[:8]} : {e}")
         return uuid[:8]
 
-
 def buy_item_market(item_name, seller_uuid, expected_price):
     """Automatise l'achat d'un item sur le market."""
     print(f"\n[AUTO-BUY] Démarrage pour {item_name} chez {seller_uuid[:8]}...")
-    
+
     seller_name = get_player_name(seller_uuid)
     print(f"[AUTO-BUY] Vendeur : {seller_name}")
-    
+
     try:
+        # Prépare la commande
+        item_search = item_name.replace("-", " ")
+        command = f"/ah {item_search} @p:{seller_name}"
+
+        print(f"[AUTO-BUY] Commande : {command}")
+
         # 1. Ouvre le chat
         pyautogui.press("t")
-        time.sleep(0.5)
-        
-        # 2. Tape la commande /ah
-        pyautogui.write("/ah ", interval=0.02)
-        time.sleep(0.3)
-        
-        # 3. Tape le nom de l'item + filtre vendeur via clipboard
-        item_search = item_name.replace("-", " ")
-        search_query = f"{item_search} @p:{seller_name}"
-        
-        # Copie dans le clipboard
-        pyperclip.copy(search_query)
-        time.sleep(0.1)
-        
-        # Colle avec Ctrl+V
-        pyautogui.hotkey("ctrl", "v")
-        print(f"[AUTO-BUY] Commande collée : /ah {search_query}")
-        time.sleep(0.3)
-        
-        # 4. Envoie
+        time.sleep(0.8)
+
+        # 2. Colle la commande complète
+        pyperclip.copy(command)
+        time.sleep(0.2)
+
+        pyautogui.keyDown("ctrl")
+        pyautogui.press("v")
+        pyautogui.keyUp("ctrl")
+        # 3. Envoie la commande
         pyautogui.press("enter")
-        time.sleep(5)  # Attendre le chargement des résultats
-        
-        # 5. Clique sur le prix
-        print(f"[AUTO-BUY] Clic sur le prix...")
+
+        # Attendre le chargement des résultats
+        time.sleep(5)
+
+        # 4. Clique sur le premier résultat
+        print("[AUTO-BUY] Clic sur le prix...")
         pyautogui.click(PRICE_ROW_X, PRICE_ROW_Y)
-        time.sleep(2)  # Attendre le modal
-        
-        # 5. Vérifie le prix (optionnel — tu peux ajouter une vérification OCR ici)
-        print(f"[AUTO-BUY] Modal ouvert — prix attendu: {expected_price}$")
+        time.sleep(2)
+
+        # 5. Vérification (optionnelle)
+        print(f"[AUTO-BUY] Modal ouvert — prix attendu : {expected_price}$")
         time.sleep(1)
-        
+
         # 6. Clique sur BUY
-        print(f"[AUTO-BUY] Clic sur BUY...")
+        print("[AUTO-BUY] Clic sur BUY...")
         pyautogui.click(BUY_BUTTON_X, BUY_BUTTON_Y)
         time.sleep(2)
-        
+
         print(f"[AUTO-BUY] ✅ Achat lancé pour {item_name}")
         return True
-        
+
     except Exception as e:
         print(f"[AUTO-BUY] ❌ Erreur : {e}")
-        # Ferme le modal si erreur
+
         try:
             pyautogui.click(CLOSE_MODAL_X, CLOSE_MODAL_Y)
         except:
             pass
-        return False
 
+        return False
 
 def send_discord_alert(alerts):
     """Envoie alerte Discord ET ajoute à la queue d'achat."""
