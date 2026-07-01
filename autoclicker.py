@@ -110,6 +110,14 @@ def click_in_window(hwnd, rel_x, rel_y, focus=True):
     click_at(left + rel_x, top + rel_y)
 
 
+def hover_in_window(hwnd, rel_x, rel_y, focus=True):
+    """Déplace juste le curseur (sans cliquer), pour déclencher l'affichage d'une infobulle."""
+    if focus:
+        bring_to_foreground(hwnd)
+    left, top, _, _ = get_client_rect_on_screen(hwnd)
+    win32api.SetCursorPos((left + rel_x, top + rel_y))
+
+
 # ---------------------------------------------------------------------------
 # Capture écran (mss) — la fenêtre doit rester visible à l'écran
 # ---------------------------------------------------------------------------
@@ -214,6 +222,18 @@ def normalize_name(s):
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
 
 
+def names_match(target_name, candidate_name, threshold=0.6):
+    """Compare deux noms de manière tolérante (accents, troncature, casse, fautes OCR)."""
+    t = normalize_name(target_name)
+    c = normalize_name(candidate_name)
+    if not t or not c:
+        return False
+    c_stripped = c.rstrip(".").strip()
+    if c_stripped and (t.startswith(c_stripped) or c_stripped in t or t in c_stripped):
+        return True
+    return difflib.SequenceMatcher(None, t, c).ratio() >= threshold
+
+
 # ---------------------------------------------------------------------------
 # Lecture de la recommandation (site PalaTracker)
 # ---------------------------------------------------------------------------
@@ -270,14 +290,72 @@ def find_matching_row(target_name, rows, threshold=0.55):
         row_norm = normalize_name(row["name"])
         if not row_norm:
             continue
-        stripped = row_norm.rstrip(".").strip()
-        # gère le nom tronqué en jeu (ex: "Ruche bourdonn..." vs "Ruche bourdonnante")
-        if stripped and (target_norm.startswith(stripped) or stripped in target_norm):
+        if names_match(target_name, row["name"], threshold=threshold):
             return row
         score = difflib.SequenceMatcher(None, target_norm, row_norm).ratio()
         if score > best_score:
             best, best_score = row, score
     return best if best_score >= threshold else None
+
+
+# ---------------------------------------------------------------------------
+# Upgrades en jeu (grille d'icônes + infobulle au survol)
+# ---------------------------------------------------------------------------
+
+def generate_upgrade_icon_positions(grid):
+    """Retourne la liste des coins HAUT-GAUCHE (x, y) de chaque icône de la grille,
+    en partant de start_x/start_y, dans l'ordre ligne par ligne."""
+    positions = []
+    for r in range(grid["rows"]):
+        for c in range(grid["columns"]):
+            x = grid["start_x"] + c * grid["spacing_x"]
+            y = grid["start_y"] + r * grid["spacing_y"]
+            positions.append((x, y))
+    return positions
+
+
+def read_upgrade_tooltip(hwnd_mc, icon_left, icon_top, cfg):
+    offset = cfg["regions"]["upgrades_tooltip_offset"]
+    region = {
+        "left": icon_left + offset["left"],
+        "top": icon_top + offset["top"],
+        "width": offset["width"],
+        "height": offset["height"],
+    }
+    img = capture_region(hwnd_mc, region)
+    return ocr_text(img, psm=7).strip()
+
+
+def find_and_click_upgrade(hwnd_mc, target_name, cfg):
+    """Survole chaque icône de la grille Upgrades, lit son infobulle, et clique
+    si elle correspond au nom recherché. Retourne True si un achat a été tenté."""
+    if "upgrades" not in cfg["regions"]:
+        return False
+
+    grid = cfg["regions"]["upgrades"]
+    icon_w, icon_h = grid["icon_w"], grid["icon_h"]
+    wait_s = cfg["behavior"].get("tooltip_wait_seconds", 0.6)
+
+    bring_to_foreground(hwnd_mc)
+
+    for x, y in generate_upgrade_icon_positions(grid):
+        center_x, center_y = x + icon_w // 2, y + icon_h // 2
+        hover_in_window(hwnd_mc, center_x, center_y, focus=False)
+        time.sleep(wait_s)
+        tooltip_text = read_upgrade_tooltip(hwnd_mc, x, y, cfg)
+
+        if not tooltip_text:
+            # Une 2e tentative au cas où l'infobulle a mis du temps à apparaître
+            time.sleep(wait_s)
+            tooltip_text = read_upgrade_tooltip(hwnd_mc, x, y, cfg)
+            if not tooltip_text:
+                continue
+
+        if names_match(target_name, tooltip_text):
+            click_in_window(hwnd_mc, center_x, center_y, focus=False)
+            return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -323,22 +401,31 @@ def run(cfg):
         if wait_s > 0:
             time.sleep(wait_s)
 
-        # --- Tentative d'achat ---
+        # --- Tentative d'achat : on cherche d'abord parmi les Bâtiments ---
         rows = scan_buildings_rows(hwnd_mc, cfg)
         row = find_matching_row(rec["name"], rows)
-        if row is None:
-            print(
-                f"[!] Bâtiment '{rec['name']}' introuvable dans la liste visible "
-                f"(pas de scroll auto en v1 — vérifie qu'il est affiché à l'écran)."
-            )
-            time.sleep(poll)
-            continue
 
-        region = cfg["regions"]["ingame_buildings_list"]
-        click_x = region["left"] + region["width"] // 2
-        click_y = region["top"] + row["y_center"]
-        click_in_window(hwnd_mc, click_x, click_y)
-        print(f"[OK] Achat tenté : {rec['name']} (coût {rec['cost']:,})")
+        if row is not None:
+            region = cfg["regions"]["ingame_buildings_list"]
+            click_x = region["left"] + region["width"] // 2
+            click_y = region["top"] + row["y_center"]
+            click_in_window(hwnd_mc, click_x, click_y)
+            print(f"[OK] Achat tenté (Bâtiment) : {rec['name']} (coût {rec['cost']:,})")
+        else:
+            # Pas trouvé parmi les Bâtiments -> on tente parmi les Upgrades
+            print(f"[i] '{rec['name']}' introuvable parmi les Bâtiments, recherche dans les Upgrades...")
+            found = find_and_click_upgrade(hwnd_mc, rec["name"], cfg)
+            if found:
+                print(f"[OK] Achat tenté (Upgrade) : {rec['name']} (coût {rec['cost']:,})")
+            else:
+                print(
+                    f"[!] '{rec['name']}' introuvable (ni Bâtiment ni Upgrade visible). "
+                    f"Vérifie qu'il est affiché à l'écran, ou que les Upgrades sont calibrés "
+                    f"(--calibrate)."
+                )
+                time.sleep(poll)
+                continue
+
         time.sleep(2)
 
         # Rafraîchit la recommandation sur le site
@@ -350,6 +437,122 @@ def run(cfg):
 # ---------------------------------------------------------------------------
 # Calibration interactive
 # ---------------------------------------------------------------------------
+
+def pick_two_points_on_image(img_bgr, window_title="Clique sur les 2 coins", display_scale=3):
+    """Affiche une image dans une fenêtre et laisse l'utilisateur cliquer 2 points
+    dessus (coin haut-gauche puis bas-droite). Échap pour annuler.
+    Retourne [(x1, y1), (x2, y2)] en coordonnées de l'image ORIGINALE (pas zoomée)."""
+    display_img = cv2.resize(
+        img_bgr, None, fx=display_scale, fy=display_scale, interpolation=cv2.INTER_NEAREST
+    ).copy()
+    points = []
+
+    def on_mouse(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN and len(points) < 2:
+            points.append((x // display_scale, y // display_scale))
+            cv2.drawMarker(display_img, (x, y), (0, 0, 255), cv2.MARKER_CROSS, 16, 2)
+            cv2.imshow(window_title, display_img)
+
+    cv2.namedWindow(window_title)
+    cv2.setMouseCallback(window_title, on_mouse)
+    cv2.imshow(window_title, display_img)
+
+    while len(points) < 2:
+        key = cv2.waitKey(30) & 0xFF
+        if key == 27:  # Échap
+            cv2.destroyWindow(window_title)
+            raise SystemExit("Calibration annulée (Échap).")
+
+    cv2.waitKey(400)  # petite pause pour voir les 2 croix avant de fermer
+    cv2.destroyWindow(window_title)
+    return points
+
+
+def calibrate_upgrades(hwnd_mc):
+    """Calibre la grille d'icônes Upgrades + la zone où apparaît l'infobulle (nom)."""
+
+    def pick_point(label):
+        input(f"Place la souris sur : {label}, puis appuie sur Entrée...")
+        return win32api.GetCursorPos()
+
+    def rel_point(hwnd, abs_point):
+        left, top, _, _ = get_client_rect_on_screen(hwnd)
+        return abs_point[0] - left, abs_point[1] - top
+
+    print("\n=== Calibration des Upgrades ===")
+    print("Vise la 1ère icône d'Upgrade visible (la plus à gauche, ex: dans Click Shop).")
+    p1 = pick_point("coin HAUT-GAUCHE de la 1ère icône")
+    p2 = pick_point("coin BAS-DROITE de cette même icône")
+    x1, y1 = rel_point(hwnd_mc, p1)
+    x2, y2 = rel_point(hwnd_mc, p2)
+    icon_left, icon_top = min(x1, x2), min(y1, y2)
+    icon_w, icon_h = abs(x2 - x1), abs(y2 - y1)
+
+    p3 = pick_point("coin HAUT-GAUCHE de la 2ème icône (juste à droite de la 1ère)")
+    x3, y3 = rel_point(hwnd_mc, p3)
+    spacing_x = x3 - icon_left
+
+    cols = input("Combien d'icônes vois-tu sur cette ligne au total ? [7]: ").strip()
+    cols = int(cols) if cols else 7
+
+    has_second_row = input("Y a-t-il une 2ème ligne d'icônes visible en dessous ? (o/n) [n]: ").strip().lower()
+    if has_second_row.startswith("o"):
+        p4 = pick_point("coin HAUT-GAUCHE de l'icône juste EN DESSOUS de la 1ère")
+        x4, y4 = rel_point(hwnd_mc, p4)
+        spacing_y = y4 - icon_top
+        rows = input("Combien de lignes au total ? [2]: ").strip()
+        rows = int(rows) if rows else 2
+    else:
+        spacing_y = icon_h + 10
+        rows = 1
+
+    grid = {
+        "start_x": icon_left,
+        "start_y": icon_top,
+        "icon_w": icon_w,
+        "icon_h": icon_h,
+        "spacing_x": spacing_x,
+        "spacing_y": spacing_y,
+        "columns": cols,
+        "rows": rows,
+    }
+
+    # --- Calibration de la zone d'infobulle : capture automatique + lecture par l'utilisateur ---
+    print("\nLe bot va survoler la 1ère icône pour faire apparaître son infobulle...")
+    bring_to_foreground(hwnd_mc)
+    left, top, _, _ = get_client_rect_on_screen(hwnd_mc)
+    center_x, center_y = icon_left + icon_w // 2, icon_top + icon_h // 2
+    win32api.SetCursorPos((left + center_x, top + center_y))
+    time.sleep(1.0)
+
+    margin_left, margin_top, margin_right, margin_bottom = 80, 160, 250, 40
+    snap_region = {
+        "left": max(0, icon_left - margin_left),
+        "top": max(0, icon_top - margin_top),
+        "width": icon_w + margin_left + margin_right,
+        "height": icon_h + margin_top + margin_bottom,
+    }
+    snap_img = capture_region(hwnd_mc, snap_region)
+    snap_path = Path(__file__).parent / "tooltip_calibration.png"
+    cv2.imwrite(str(snap_path), snap_img)
+
+    print(f"\nImage enregistrée ici : {snap_path}")
+    print("Une fenêtre va s'ouvrir avec cette image, zoomée x3 pour plus de précision.")
+    print("Clique d'abord sur le coin HAUT-GAUCHE du texte du NOM dans l'infobulle,")
+    print("puis sur son coin BAS-DROITE. (Échap pour annuler)")
+    (tl_x, tl_y), (br_x, br_y) = pick_two_points_on_image(
+        snap_img, "Upgrade — clique coin HAUT-GAUCHE puis BAS-DROITE du nom"
+    )
+
+    tooltip_offset = {
+        "left": snap_region["left"] + tl_x - icon_left,
+        "top": snap_region["top"] + tl_y - icon_top,
+        "width": br_x - tl_x,
+        "height": br_y - tl_y,
+    }
+
+    return grid, tooltip_offset
+
 
 def calibrate():
     print("=== Calibration ===")
@@ -409,19 +612,34 @@ def calibrate():
     n = int(n) if n else 9
     row_height = max(1, list_region["height"] // n)
 
+    upgrades_grid = None
+    tooltip_offset = None
+    ans = input(
+        "\nVeux-tu aussi calibrer les UPGRADES (icônes sans texte, ex: section "
+        "'UPGRADES' du Click Shop) ? (o/n) [n]: "
+    ).strip().lower()
+    if ans.startswith("o"):
+        upgrades_grid, tooltip_offset = calibrate_upgrades(hwnd_mc)
+
+    regions = {
+        "rec_name": rec_name,
+        "rec_cost": rec_cost,
+        "rec_date": rec_date,
+        "refresh_button": refresh_button,
+        "ingame_buildings_list": list_region,
+    }
+    if upgrades_grid is not None:
+        regions["upgrades"] = upgrades_grid
+        regions["upgrades_tooltip_offset"] = tooltip_offset
+
     cfg = {
         "window_titles": {"browser": browser_title, "minecraft": mc_title},
-        "regions": {
-            "rec_name": rec_name,
-            "rec_cost": rec_cost,
-            "rec_date": rec_date,
-            "refresh_button": refresh_button,
-            "ingame_buildings_list": list_region,
-        },
+        "regions": regions,
         "behavior": {
             "poll_interval_seconds": 5,
             "buy_buffer_seconds": 6,
             "building_row_height": row_height,
+            "tooltip_wait_seconds": 0.6,
         },
     }
     save_config(cfg)
@@ -432,7 +650,12 @@ def calibrate():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--calibrate", action="store_true", help="Lance la calibration interactive")
+    parser.add_argument("--calibrate", action="store_true", help="Lance la calibration interactive complète")
+    parser.add_argument(
+        "--calibrate-upgrades",
+        action="store_true",
+        help="Recalibre uniquement la section Upgrades (garde le reste de la config existante)",
+    )
     parser.add_argument("--tesseract", help="Chemin vers tesseract.exe si non détecté automatiquement")
     args = parser.parse_args()
 
@@ -442,6 +665,14 @@ if __name__ == "__main__":
     try:
         if args.calibrate:
             calibrate()
+        elif args.calibrate_upgrades:
+            cfg = load_config()
+            hwnd_mc = find_window(cfg["window_titles"]["minecraft"])
+            grid, tooltip_offset = calibrate_upgrades(hwnd_mc)
+            cfg["regions"]["upgrades"] = grid
+            cfg["regions"]["upgrades_tooltip_offset"] = tooltip_offset
+            save_config(cfg)
+            print(f"\nSection Upgrades mise à jour dans {CONFIG_PATH}")
         else:
             run(load_config())
     except KeyboardInterrupt:
