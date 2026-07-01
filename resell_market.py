@@ -149,62 +149,17 @@ def get_player_name(uuid):
         return uuid[:8]
 
 def buy_item_market(item_name, seller_uuid, expected_price):
-    """Automatise l'achat d'un item sur le market."""
-    print(f"\n[AUTO-BUY] Démarrage pour {item_name} chez {seller_uuid[:8]}...")
-
+    """Copie simplement la commande dans le presse-papiers."""
     seller_name = get_player_name(seller_uuid)
-    print(f"[AUTO-BUY] Vendeur : {seller_name}")
 
-    try:
-        # Prépare la commande
-        item_search = item_name.replace("-", " ")
-        command = f"/ah {item_search} @p:{seller_name}"
+    item_search = item_name.replace("-", " ")
+    command = f"/ah {item_search} @p:{seller_name}"
 
-        print(f"[AUTO-BUY] Commande : {command}")
+    pyperclip.copy(command)
 
-        # 1. Ouvre le chat
-        pyautogui.press("t")
-        time.sleep(0.8)
+    print(f"[PRESSE-PAPIERS] ✅ Commande copiée : {command}")
 
-        # 2. Colle la commande complète
-        pyperclip.copy(command)
-        time.sleep(0.2)
-
-        pyautogui.keyDown("ctrl")
-        pyautogui.press("v")
-        pyautogui.keyUp("ctrl")
-        # 3. Envoie la commande
-        pyautogui.press("enter")
-
-        # Attendre le chargement des résultats
-        time.sleep(5)
-
-        # 4. Clique sur le premier résultat
-        print("[AUTO-BUY] Clic sur le prix...")
-        pyautogui.click(PRICE_ROW_X, PRICE_ROW_Y)
-        time.sleep(2)
-
-        # 5. Vérification (optionnelle)
-        print(f"[AUTO-BUY] Modal ouvert — prix attendu : {expected_price}$")
-        time.sleep(1)
-
-        # 6. Clique sur BUY
-        print("[AUTO-BUY] Clic sur BUY...")
-        pyautogui.click(BUY_BUTTON_X, BUY_BUTTON_Y)
-        time.sleep(2)
-
-        print(f"[AUTO-BUY] ✅ Achat lancé pour {item_name}")
-        return True
-
-    except Exception as e:
-        print(f"[AUTO-BUY] ❌ Erreur : {e}")
-
-        try:
-            pyautogui.click(CLOSE_MODAL_X, CLOSE_MODAL_Y)
-        except:
-            pass
-
-        return False
+    return True
 
 def send_discord_alert(alerts):
     """Envoie alerte Discord ET ajoute à la queue d'achat."""
@@ -250,14 +205,17 @@ def send_discord_alert(alerts):
 
 
 def process_buy_queue():
-    """Traite les achats en queue."""
     while True:
         if buy_queue:
             item = buy_queue.pop(0)
-            print(f"\n[QUEUE] Traitement de {item['item']}")
-            buy_item_market(item["item"], item["seller_uuid"], item["price"])
-            time.sleep(10)  # Délai entre les achats
-        time.sleep(1)
+            buy_item_market(
+                item["item"],
+                item["seller_uuid"],
+                item["price"]
+            )
+            time.sleep(0.5)
+
+        time.sleep(0.1)
 
 
 def check_prices():
