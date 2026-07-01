@@ -456,6 +456,22 @@ def find_and_click_upgrade(hwnd_mc, target_name, cfg, debug=True):
 # Boucle principale
 # ---------------------------------------------------------------------------
 
+def find_building_with_retry(hwnd_mc, target_name, cfg, attempts=3, delay_s=0.7, debug=True):
+    """Scanne les Bâtiments plusieurs fois si besoin : certaines lignes (ex: bâtiments
+    saisonniers avec une petite animation) peuvent être mal lues sur une capture isolée
+    à cause du timing de l'animation. On reprend une capture fraîche entre chaque essai."""
+    for attempt in range(1, attempts + 1):
+        rows = scan_buildings_rows(hwnd_mc, cfg, debug=(debug and attempt == 1))
+        row = find_matching_row(target_name, rows)
+        if row is not None:
+            return row
+        if attempt < attempts:
+            if debug:
+                print(f"    [debug] bâtiment non trouvé à l'essai {attempt}/{attempts}, nouvelle capture...")
+            time.sleep(delay_s)
+    return None
+
+
 def run(cfg):
     hwnd_browser = find_window(cfg["window_titles"]["browser"])
     hwnd_mc = find_window(cfg["window_titles"]["minecraft"])
@@ -495,9 +511,8 @@ def run(cfg):
         if wait_s > 0:
             time.sleep(wait_s)
 
-        # --- Tentative d'achat : on cherche d'abord parmi les Bâtiments ---
-        rows = scan_buildings_rows(hwnd_mc, cfg)
-        row = find_matching_row(rec["name"], rows)
+        # --- Tentative d'achat : on cherche d'abord parmi les Bâtiments (avec retry) ---
+        row = find_building_with_retry(hwnd_mc, rec["name"], cfg)
 
         if row is not None:
             region = cfg["regions"]["ingame_buildings_list"]
