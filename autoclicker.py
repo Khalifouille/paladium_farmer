@@ -456,19 +456,59 @@ def find_and_click_upgrade(hwnd_mc, target_name, cfg, debug=True):
 # Boucle principale
 # ---------------------------------------------------------------------------
 
-def find_building_with_retry(hwnd_mc, target_name, cfg, attempts=3, delay_s=0.7, debug=True):
-    """Scanne les Bâtiments plusieurs fois si besoin : certaines lignes (ex: bâtiments
-    saisonniers avec une petite animation) peuvent être mal lues sur une capture isolée
-    à cause du timing de l'animation. On reprend une capture fraîche entre chaque essai."""
-    for attempt in range(1, attempts + 1):
-        rows = scan_buildings_rows(hwnd_mc, cfg, debug=(debug and attempt == 1))
-        row = find_matching_row(target_name, rows)
-        if row is not None:
-            return row
-        if attempt < attempts:
+def scroll_buildings_list(hwnd_mc, notches, cfg):
+    """Fait défiler la liste des Bâtiments via la molette de la souris.
+    notches > 0 fait remonter (vers le haut), notches < 0 fait descendre
+    (révèle les bâtiments suivants)."""
+    region = cfg["regions"]["ingame_buildings_list"]
+    center_x = region["left"] + region["width"] // 2
+    center_y = region["top"] + region["height"] // 2
+
+    bring_to_foreground(hwnd_mc)
+    left, top, _, _ = get_client_rect_on_screen(hwnd_mc)
+    win32api.SetCursorPos((left + center_x, top + center_y))
+    time.sleep(0.05)
+    win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, notches * 120, 0)
+
+
+def find_building_with_scroll(hwnd_mc, target_name, cfg, debug=True):
+    """Cherche le bâtiment recommandé, en faisant défiler la liste si besoin.
+    Remonte tout en haut d'abord (état connu), puis scanne page par page en
+    descendant, jusqu'à trouver une correspondance ou détecter la fin de la
+    liste (le contenu ne bouge plus après un défilement)."""
+    behavior = cfg["behavior"]
+    max_scrolls = behavior.get("max_scroll_steps", 12)
+    scroll_notches = behavior.get("scroll_notches_per_step", 3)
+    retries_per_position = 2
+
+    scroll_buildings_list(hwnd_mc, 30, cfg)  # remonte tout en haut
+    time.sleep(0.3)
+
+    previous_fingerprint = None
+    for step in range(max_scrolls + 1):
+        rows = []
+        row = None
+        for attempt in range(retries_per_position):
+            rows = scan_buildings_rows(hwnd_mc, cfg, debug=(debug and attempt == 0))
+            row = find_matching_row(target_name, rows)
+            if row is not None:
+                return row
+            if attempt < retries_per_position - 1:
+                time.sleep(0.5)  # une 2e capture, au cas où l'échec vient d'une animation
+
+        fingerprint = tuple(r["name"] for r in rows)
+        if step > 0 and fingerprint == previous_fingerprint:
             if debug:
-                print(f"    [debug] bâtiment non trouvé à l'essai {attempt}/{attempts}, nouvelle capture...")
-            time.sleep(delay_s)
+                print("    [debug] défilement sans effet, fin de la liste atteinte.")
+            break
+        previous_fingerprint = fingerprint
+
+        if step < max_scrolls:
+            if debug:
+                print(f"    [debug] non trouvé sur cette page, défilement #{step + 1}...")
+            scroll_buildings_list(hwnd_mc, -scroll_notches, cfg)
+            time.sleep(0.35)
+
     return None
 
 
@@ -511,8 +551,8 @@ def run(cfg):
         if wait_s > 0:
             time.sleep(wait_s)
 
-        # --- Tentative d'achat : on cherche d'abord parmi les Bâtiments (avec retry) ---
-        row = find_building_with_retry(hwnd_mc, rec["name"], cfg)
+        # --- Tentative d'achat : on cherche d'abord parmi les Bâtiments (avec scroll) ---
+        row = find_building_with_scroll(hwnd_mc, rec["name"], cfg)
 
         if row is not None:
             region = cfg["regions"]["ingame_buildings_list"]
@@ -769,6 +809,8 @@ def calibrate():
             "buy_buffer_seconds": 6,
             "building_row_height": row_height,
             "tooltip_wait_seconds": 0.6,
+            "max_scroll_steps": 12,
+            "scroll_notches_per_step": 3,
         },
     }
     save_config(cfg)
